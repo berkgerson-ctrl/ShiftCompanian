@@ -1,0 +1,11 @@
+{
+  "name": "shift-companion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline-first shift, leave and TOIL tracker (PWA).",
+  "license": "MIT",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node tests/sync.test.mjs"
+  }
+}
