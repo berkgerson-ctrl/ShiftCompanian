@@ -1,6 +1,6 @@
 // Service worker: the app shell works offline.
 // Bump VERSION on every release so installed copies pick up the update.
-const VERSION = 'sc-v1';
+const VERSION = 'sc-v4';
 const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/sync.js', 'js/firebase-config.js',
   'js/vendor/xlsx.full.min.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
@@ -30,5 +30,14 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => hit || caches.match('index.html'));
     return hit || net;
+  }));
+});
+
+// Tapping a reminder brings the app to the front (or opens it).
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) if ('focus' in c) return c.focus();
+    return self.clients.openWindow('./');
   }));
 });

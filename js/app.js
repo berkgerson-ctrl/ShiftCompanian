@@ -1,31 +1,47 @@
 // Shift Companion — app logic (classic script; handlers are referenced from inline onclick).
 const _n=new Date();
-const E=(y,m,d)=>Math.round(Date.UTC(y,m,d)/864e5),UD=n=>new Date(n*864e5),O=E(2026,9,0),TODAY=E(_n.getFullYear(),_n.getMonth(),_n.getDate()),STD=468;
+const E=(y,m,d)=>Math.round(Date.UTC(y,m,d)/864e5),UD=n=>new Date(n*864e5),O=E(2026,9,0),STD=468;
+let TODAY=E(_n.getFullYear(),_n.getMonth(),_n.getDate());
+const todayN=t=>{const x=new Date(t);return E(x.getFullYear(),x.getMonth(),x.getDate())};
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],DAYN=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const fd=n=>MON[UD(n).getUTCMonth()]+' '+UD(n).getUTCDate(),iso=n=>UD(n).toISOString().slice(0,10),fromIso=t=>{const m=String(t).match(/^(\d{4})-(\d\d)-(\d\d)$/);return m?E(+m[1],m[2]-1,+m[3]):NaN};
 const DOW=['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const wd=[1,2,4,5,6,8,9,11,12,13,15,16,18,19,20,22,23,25,26,27,29,30],work=wd.map(d=>O+d);
-const S={};wd.forEach(d=>S[O+d]={s:d%3==0?'14:00':'07:00',e:d%3==0?'21:48':'14:48',st:'Scheduled',f:''});
+const S={};wd.forEach(d=>S[O+d]={s:d%3==0?'09:22':'08:50',e:d%3==0?'17:10':'16:38',st:'Scheduled',f:''});
 S[O+12].st='Planned';S[O+16].st='Approved';S[O+16].f='Swapped';
 const R={week:6,cons:6,sixPerMonth:2,commute:45};
+const TYPES={E:{n:'Early',s:'08:50',e:'16:38'},L:{n:'Late',s:'09:22',e:'17:10'}};
+const partial=d=>leaves.some(l=>l.d==d&&!l.full&&l.st!='Denied');
+const kind=d=>{const s=S[d];if(!s)return '';if(partial(d))return 'C';for(const k in TYPES)if(TYPES[k].s==s.s&&TYPES[k].e==s.e)return k;return 'C'};
+const fullLv=d=>leaves.find(l=>l.d==d&&l.full&&l.st!='Denied');
 const DEMO_BASE={PTO:36*60+12,TOIL:11*60+30,Sick:5*468},base={PTO:0,TOIL:0,Sick:0};
 const hm=t=>{const[a,b]=String(t).split(':').map(Number);return a*60+b};
 let leaves=[{id:1,d:O+5,type:'PTO',full:true,st:'Review'},{id:2,d:O+20,type:'PTO',full:true,st:'Denied'},{id:3,d:O+23,type:'PTO',full:false,s:'12:00',e:'14:00',st:'Approved'},{id:4,d:O+9,type:'Sick',full:true,st:'Approved'}],lid=5;
 const dur=l=>l.full?STD:Math.min(STD,hm(l.e)-hm(l.s));
-const used=(k,skip)=>leaves.filter(l=>l.type==k&&l.st=='Approved'&&l.id!=skip).reduce((a,l)=>a+dur(l),0),rem=k=>base[k]-used(k);
-const fm=m=>{const d=Math.floor(m/STD),r=m%STD;return (d?d+'d ':'')+Math.floor(r/60)+'h '+String(r%60).padStart(2,'0')+'m'};
+const used=(k,skip)=>leaves.filter(l=>l.type==k&&l.st=='Approved'&&l.id!=skip).reduce((a,l)=>a+dur(l),0),rem=k=>bal(k)-used(k);
+let holidays=[],swapLog=[];
+const TOIL_DAY=STD,hol=d=>holidays.find(h=>h.d==d);
+// Bank holiday TOIL: a shift on the day = scheduled (the company sets shifts) = earn 1 day once the day arrives.
+// A full-day leave request of any type (PTO, TOIL, Sick) that is not Denied cancels it; partial leave does not.
+function holState(h){if(!S[h.d])return 'off';
+  if(leaves.some(l=>l.d==h.d&&l.full&&l.st!='Denied'))return 'blocked';
+  return h.d<=TODAY?'earned':'pending'}
+const toilEarned=()=>holidays.filter(h=>holState(h)=='earned').length*TOIL_DAY,bal=k=>base[k]+(k=='TOIL'?toilEarned():0);
+const fm=m=>{const ng=m<0;m=Math.abs(m);const d=Math.floor(m/STD),r=m%STD;return (ng?'−':'')+(d?d+'d ':'')+Math.floor(r/60)+'h '+String(r%60).padStart(2,'0')+'m'};
 const lab={Review:'Under Review'};
-let tab=0,sel=TODAY,vm={y:_n.getFullYear(),m:_n.getMonth()},out='',col=false,modal=false,warn=false,editing=null,dl=false,imp=null,impDone='',lvId=null;
+let tab=0,sel=TODAY,vm={y:_n.getFullYear(),m:_n.getMonth()},out='',col=false,modal=false,warn=false,editing=null,dl=false,imp=null,impDone='',lvId=null,swId=null,bhId=null;
 function mv(k){let m=vm.m+k,y=vm.y;if(m<0){m=11;y--}if(m>11){m=0;y++}vm={y,m};draw()}
 function goto(d){sel=d;const t=UD(d);vm={y:t.getUTCFullYear(),m:t.getUTCMonth()}}
 const newId=()=>Date.now()*1000+Math.floor(Math.random()*1000);
 function openL(id){modal='lv';lvId=id;warn=false;dl=false;draw()}
 function openImp(){modal='imp';imp=null;impDone='';draw()}
 function openM(d){editing=d;modal=true;warn=false;dl=false;draw()}
+function openW(id){swId=id;modal='sw';warn=false;dl=false;draw()}
+function openBH(d){bhId=d;modal='bh';warn=false;dl=false;draw()}
 const dow=n=>((n+4)%7+7)%7;
 const off=x=>leaves.some(l=>l.d==x&&l.full&&l.st=='Approved');
-function check(d){ // would working day d break rules?
-  const w=new Set(work.filter(x=>S[x].st!='Denied'&&!off(x)));w.add(d);
+function check(d,skip){ // would working day d break rules? (skip = a day being given away)
+  const w=new Set(work.filter(x=>x!=skip&&S[x].st!='Denied'&&!off(x)));w.add(d);
   const a=d-dow(d),wc=(set,t)=>[...set].filter(x=>x>=t&&x<=t+6).length,wk=wc(w,a);
   let run=1,x=d-1;while(w.has(x)){run++;x--}x=d+1;while(w.has(x)){run++;x++}
   const e=[];if(wk>R.week)e.push(`Week would have ${wk} workdays (max ${R.week})`);
@@ -37,28 +53,44 @@ function check(d){ // would working day d break rules?
 const ic=p=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const icons=[ic('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'),ic('<path d="M7 7h12l-3-3M17 17H5l3 3"/>'),ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),ic('<path d="M4 6h10M4 12h16M4 18h8"/><circle cx="17" cy="6" r="2"/>')];
 const names=['Schedule','Swaps','Leave','Rules'];
-function cal(){let h='<div class="grid">'+DOW.map(x=>`<div class="h">${x}</div>`).join('');
+function cal(){const big=col;let h='<div class="grid'+(big?' big':'')+'">'+DOW.map(x=>`<div class="h">${x}</div>`).join('');
   const f1=E(vm.y,vm.m,1),nd=new Date(Date.UTC(vm.y,vm.m+1,0)).getUTCDate();
   for(let i=0;i<dow(f1);i++)h+='<div></div>';
   for(let k=1;k<=nd;k++){const d=f1+k-1,s=S[d];const c=s?({Scheduled:'#5b9bff',Planned:'#7c6cf0',Review:'#d95f18',Approved:'#1fb67a',Denied:'#e5484d'})[s.st]:'';
-    h+=`<div class="d ${d==sel?'sel':''} ${d==TODAY?'today':''}" onclick="sel=${d};col=false;draw()"><b>${k}</b>${leaves.some(l=>l.d==d)?'<i class="lv"></i>':''}${s?`<i style="background:${c}"></i>`:''}</div>`}
-  return h+'</div>'}
+    const fl=fullLv(d);let cls='',tag='';
+    if(big){if(fl){cls=fl.st=='Approved'?'lva':'lvr';tag=`<em class="tg">${fl.type=='Sick'?'SICK':fl.type}</em>`}
+      else if(!s){cls='offd';tag='<em class="tg">OFF</em>'}
+      else{const q=kind(d);cls='k'+q;tag=`<em class="tg lt">${q}</em>`}}
+    h+=`<div class="d ${cls} ${d==sel?'sel':''} ${d==TODAY?'today':''} ${hol(d)?'bh':''}" onclick="sel=${d};col=false;draw()"><b>${k}</b>${big?tag:''}${swapLog.some(w=>w.give==d||w.take==d)?'<i class="sw"></i>':''}${leaves.some(l=>l.d==d)&&!(big&&fl)?'<i class="lv"></i>':''}${s&&!(big&&!fl)?`<i style="background:${c}"></i>`:''}</div>`}
+  h+='</div>';
+  if(big)h+='<div class="lg"><span><u class="kE">E</u>Early 08:50</span><span><u class="kL">L</u>Late 09:22</span><span><u class="kC">C</u>Custom / partial</span><span><u class="offd">OFF</u>Day off</span><span><u class="lva"></u>Leave</span><span><u class="lvr"></u>Pending</span></div>';
+  return h}
 function sched(){const s=S[sel];let h=`<div class="top"><div class="bar"><span>‹</span><span>Schedule</span><span onclick="openImp()" style="cursor:pointer;font-size:12px;border:1px solid #5b6f9e;border-radius:12px;padding:3px 10px">Import</span></div><div class="sub row" style="font-size:15px"><span onclick="mv(-1)" style="cursor:pointer;padding:4px 14px">‹</span><b onclick="goto(TODAY);draw()" style="cursor:pointer">${MON[vm.m]} ${vm.y}</b><span onclick="mv(1)" style="cursor:pointer;padding:4px 14px">›</span></div>${cal()}</div><div class="sheet" id="sh"><div class="grab" id="gr"></div><h2>${DAYN[dow(sel)]}, ${fd(sel)}</h2>`;
   if(!s)h+='<div class="card"><div class="t">Day off</div><div class="m">Standard day = 7h 48m. Tap + to add a shift.</div></div>';
   else{const[hh,mm]=s.s.split(':').map(Number);const l=hh*60+mm-R.commute;
     h+=`<div class="card"><div class="row"><div class="t">${s.s} – ${s.e}</div><span class="pill st-${s.st}">${lab[s.st]||s.st}</span></div><div class="m">Sun–Sat week · ${DOW[dow(sel)]}</div>
-    <span class="tag tg-b">Leave by ${String(Math.floor(l/60)).padStart(2,'0')}:${String(l%60).padStart(2,'0')}</span>${s.f?`<span class="tag tg-o">${s.f}</span>`:''}<button class="btn" style="margin-top:12px" onclick="openM(${sel})">Edit shift</button></div>`}
+    <span class="tag tg-b">Leave by ${tm(((l%1440)+1440)%1440)}</span>${s.f?`<span class="tag tg-o">${s.f}</span>`:''}<button class="btn" style="margin-top:12px" onclick="openM(${sel})">Edit shift</button></div>`}
   h+=leaves.filter(l=>l.d==sel).map(l=>`<div class="card" style="border-left:4px solid #f2c94c;cursor:pointer" onclick="openL(${l.id})"><div class="row"><div class="t">${l.type} leave · ${l.full?'Full day':'Partial'}</div><span class="pill st-${l.st}">${lab[l.st]||l.st}</span></div><div class="m">${l.full?'':l.s+'–'+l.e+' · '}${fm(dur(l))}${l.st=='Approved'?' deducted':l.st=='Denied'?' not deducted':' requested'}</div></div>`).join('');
+  const H=hol(sel);if(H){const stt=holState(H),p=HL[stt];h+=`<div class="card" style="border-left:4px solid #f2994a;cursor:pointer" onclick="openBH(${H.d})"><div class="row"><div class="t">Bank holiday · ${esc(H.name)}</div>${p[0]?`<span class="pill st-${p[0]}">${p[1]}</span>`:''}</div><div class="m">${holNote(stt)}</div></div>`}
+  h+=swapLog.filter(w=>w.give==sel||w.take==sel).map(w=>`<div class="card" style="border-left:4px solid #b58cff;cursor:pointer" onclick="openW(${w.id})"><div class="row"><div class="t">Swap · ${w.give==sel?'giving this day away':'taking this day'}</div><span class="pill st-${w.st}">${lab[w.st]||w.st}</span></div><div class="m">${w.who?(w.give==sel?'To ':'From ')+esc(w.who)+' · ':''}${esc(swapTitle(w))}</div></div>`).join('');
   return h+'</div>'}
-function swaps(){return `<div class="dark"><div class="bar"><span></span><span>Swaps</span><span></span></div><div class="sub">Check a day your peer offers or asks for</div></div><div class="page">
+function swaps(){
+  const due=swapLog.filter(w=>fuOpen(w)&&w.fu<=TODAY+3).sort((a,b)=>a.fu-b.fu);
+  const L=[...swapLog].sort((a,b)=>Math.max(b.give,b.take)-Math.max(a.give,a.take));
+  const dueTxt=w=>w.fu<TODAY?['Denied','Overdue '+(TODAY-w.fu)+'d']:w.fu==TODAY?['Review','Due today']:['Planned','In '+(w.fu-TODAY)+'d'];
+  return `<div class="dark"><div class="bar"><span></span><span>Swaps</span><span></span></div><div class="sub">Arranged outside the app. Log them here to keep a record.</div></div><div class="page">
+  ${due.length?`<h2>Follow-ups</h2>${due.map(w=>{const t=dueTxt(w);return `<div class="card row" onclick="openW(${w.id})" style="cursor:pointer"><div><div class="t">${esc(w.who||'Swap')} · ${fd(w.fu)}</div><div class="m">${esc(swapTitle(w))}</div></div><span class="pill st-${t[0]}">${t[1]}</span></div>`}).join('')}`:''}
   <h2>Check a day</h2><input type="date" id="cd" value="${iso(sel)}"><button class="btn" onclick="chk()">Check against my rules</button><div id="res" style="margin:12px 0">${out}</div>
-  <h2>Swap log</h2><div class="m">Recording swaps (who, which days, reminders) is planned for a later version. For now, use the checker above.</div></div>`}
+  <h2>Swap log</h2><button class="btn" style="margin:0 0 10px" onclick="openW(null)">Log a swap</button>
+  ${L.length?L.map(w=>`<div class="card row" onclick="openW(${w.id})" style="cursor:pointer"><div><div class="t">${esc(swapTitle(w))}</div><div class="m">${w.who?'With '+esc(w.who):'No name'}${w.fu?' · follow up '+fd(w.fu):''}${w.note?' · '+esc(w.note):''}</div></div><span class="pill st-${w.st}">${lab[w.st]||w.st}</span></div>`).join(''):'<div class="m">No swaps logged yet.</div>'}
+  <div class="m" style="margin-top:8px">The log does not change your schedule. Edit the shifts yourself once a swap is approved.</div></div>`}
 function chk(){const d=fromIso(document.getElementById('cd').value);if(isNaN(d))return;
   const e=off(d)?['You are on approved leave that day']:work.includes(d)?['You already work that day']:check(d);
   out=e.length?`<b class="bad">✗ Not safe for ${fd(d)}</b><br>${e.join('<br>')}`:`<b class="ok">✓ ${fd(d)} is safe to take</b>`;draw()}
-function leave(){const L=[...leaves].sort((a,b)=>a.d-b.d);
-  return `<div class="dark"><div class="bar"><span></span><span>Leave & TOIL</span><span></span></div><div class="bal">${Object.keys(base).map(k=>`<div><small>${k}</small><b>${fm(rem(k))}</b></div>`).join('')}</div><div class="m" style="color:#9fb0d6">1 day = 7h 48m (468 min). Only Approved requests are deducted.</div><button class="btn" onclick="openL(null)">Request leave</button></div>
-  <div class="page"><h2>Requests</h2>${L.length?L.map(l=>`<div class="card row" onclick="openL(${l.id})" style="cursor:pointer"><div><div class="t">${fd(l.d)} · ${l.type}</div><div class="m">${l.full?'Full day':l.s+'–'+l.e} · ${fm(dur(l))}</div></div><span class="pill st-${l.st}">${lab[l.st]||l.st}</span></div>`).join(''):'<div class="m">No requests yet.</div>'}</div>`}
+function leave(){const L=[...leaves].sort((a,b)=>a.d-b.d),H=[...holidays].filter(h=>holState(h)!='off').sort((a,b)=>a.d-b.d),te=toilEarned();
+  return `<div class="dark"><div class="bar"><span></span><span>Leave & TOIL</span><span></span></div><div class="bal">${Object.keys(base).map(k=>`<div><small>${k}</small><b>${fm(rem(k))}</b></div>`).join('')}</div><div class="m" style="color:#9fb0d6">1 day = 7h 48m (468 min). Only Approved requests are deducted.${te?` TOIL includes ${fm(te)} earned on bank holidays.`:''}</div><button class="btn" onclick="openL(null)">Request leave</button></div>
+  <div class="page"><h2>Requests</h2>${L.length?L.map(l=>`<div class="card row" onclick="openL(${l.id})" style="cursor:pointer"><div><div class="t">${fd(l.d)} · ${l.type}</div><div class="m">${l.full?'Full day':l.s+'–'+l.e} · ${fm(dur(l))}</div></div><span class="pill st-${l.st}">${lab[l.st]||l.st}</span></div>`).join(''):'<div class="m">No requests yet.</div>'}
+  ${H.length?`<h2 style="margin-top:14px">Bank holiday TOIL</h2>${H.map(h=>holRow(h,false)).join('')}`:''}</div>`}
 function lu(){const f=fv('l-f')=='1';document.getElementById('l-tm').style.display=f?'none':'';const m=f?STD:hm(fv('l-b'))-hm(fv('l-a'));
   document.getElementById('lm').textContent=m>0?`${f?'Full day':'Partial'}: ${fm(Math.min(STD,m))} · deducted from ${fv('l-t')} once Approved`:'End time must be after start time.';
   warn=false;wn('');document.getElementById('sv').textContent=lvId?'Save changes':'Submit request'}
@@ -66,8 +98,10 @@ function saveL(){const f=fv('l-f')=='1',d=fromIso(fv('l-d')),a=fv('l-a'),b=fv('l
   if(isNaN(d))return wn('Pick a date.');
   if(!f&&!(m>0))return wn('End time must be after start time.');
   if(leaves.some(x=>x.d==d&&x.id!=lvId&&x.st!='Denied'&&(f||x.full||(hm(a)<hm(x.e)&&hm(b)>hm(x.s)))))return wn('This overlaps another leave request that day.');
-  const need=Math.min(STD,m),avail=base[t]-used(t,lvId);
-  if(st!='Denied'&&need>avail&&!warn){warn=true;document.getElementById('sv').textContent='Submit anyway';return wn(`⚠ Only ${fm(Math.max(0,avail))} ${t} left; this needs ${fm(need)}.`)}
+  const need=Math.min(STD,m),avail=bal(t)-used(t,lvId),msgs=[];
+  if(st!='Denied'&&need>avail)msgs.push(`Only ${fm(Math.max(0,avail))} ${t} left; this needs ${fm(need)}.`);
+  if(st!='Denied'&&f&&hol(d)&&S[d])msgs.push(`${hol(d).name} is a bank holiday you are scheduled to work. A full-day ${t} request means no TOIL day.`);
+  if(msgs.length&&!warn){warn=true;document.getElementById('sv').textContent='Submit anyway';return wn('⚠ '+msgs.join(' '))}
   const rec={id:lvId||newId(),d,type:t,full:f,s:f?null:a,e:f?null:b,st};
   if(lvId)leaves[leaves.findIndex(x=>x.id==lvId)]=rec;else leaves.push(rec);pL(rec);goto(d);col=false;closeM()}
 function delL(){const b=document.getElementById('dl');if(!dl){dl=true;b.textContent='Tap again to confirm delete';return}xL(lvId);leaves=leaves.filter(x=>x.id!=lvId);closeM()}
@@ -102,7 +136,10 @@ function rules(){const st=(k,l,min,max)=>`<div class="card row"><div class="t">$
   return `<div class="dark"><div class="bar"><span></span><span>Rules & Settings</span><span></span></div><div class="sub">Week runs Sunday → Saturday</div></div><div class="page">
   <h2>Limits</h2><div class="m" style="margin-bottom:8px">Approved full-day leave doesn't count as a workday. Partial leave still does. A week counts toward the month it ends in (Saturday).</div>${st('week','Max workdays / week',1,7)}${st('cons','Max consecutive days',1,14)}${st('sixPerMonth','6-day weeks / month',0,5)}
   <h2>Commute</h2>${st('commute','Travel time to work',5,180)}<div class="m">Used for the “Leave by” reminder on each shift.</div>
-  <h2 style="margin-top:14px">Opening balances</h2><div class="m" style="margin-bottom:8px">Hours:minutes you had before using this app (e.g. 36:12). Approved leave is deducted from these. To add earned TOIL, raise the TOIL balance.</div>${['PTO','TOIL','Sick'].map(k=>`<div class="card row"><div class="t">${k}</div><input style="width:110px;text-align:right" value="${Math.floor(base[k]/60)}:${pad(base[k]%60)}" onchange="setBal('${k}',this.value)"></div>`).join('')}
+  <h2 style="margin-top:14px">Reminders</h2>${notifCard()}${calCard()}
+  <h2 style="margin-top:14px">Bank holidays</h2><div class="m" style="margin-bottom:8px">Scheduled to work a bank holiday? You earn 1 TOIL day (7h 48m) once the day arrives. Take a full day of leave (PTO, TOIL or sick) on it and you earn none; partial leave does not count. Add the dates for your region.</div>${[...holidays].sort((a,b)=>a.d-b.d).map(h=>holRow(h,true)).join('')||'<div class="m">No bank holidays added yet.</div>'}
+  <div class="two"><button class="btn" onclick="openBH(null)">Add holiday</button><button class="btn" style="background:#8a97b8" onclick="modal='bhm';draw()">Add several</button></div>
+  <h2 style="margin-top:14px">Opening balances</h2><div class="m" style="margin-bottom:8px">Hours:minutes you had before using this app (e.g. 36:12). Approved leave is deducted from these. TOIL earned on the bank holidays below is added automatically, so leave it out of the TOIL figure.</div>${['PTO','TOIL','Sick'].map(k=>`<div class="card row"><div class="t">${k}</div><input style="width:110px;text-align:right" value="${Math.floor(base[k]/60)}:${pad(base[k]%60)}" onchange="setBal('${k}',this.value)"></div>`).join('')}
   <h2 style="margin-top:14px">Sync</h2><div class="card"><div class="t">${dbOk?'● Saved on this device':'⚠ Not saved: storage unavailable'}</div><div class="m">${dbOk?'Every change is written to this device straight away and works offline.':'This browser is blocking local storage, so changes will be lost when the page reloads.'}</div></div>${syncCard()}
   <h2 style="margin-top:14px">Google Sheets</h2>${sheetsCard()}<h2 style="margin-top:14px">Data</h2><button class="btn" onclick="modal='exp';draw()">Export for payroll (Google Sheets)</button><button class="btn" style="background:#8a97b8" onclick="demo()">Load demo data</button><button class="btn" id="clr" style="background:var(--red)" onclick="clr()">Clear all data</button></div>`}
 function drag(h,el,o){let y0=null,b=0,cur=0;
@@ -112,10 +149,10 @@ function drag(h,el,o){let y0=null,b=0,cur=0;
 function wire(){const sh=document.getElementById('sh');
   if(sh){const off=()=>sh.offsetHeight-124,pos=()=>sh.style.transform=col?`translateY(${off()}px)`:'translateY(0)';
     sh.style.transition='none';pos();
-    drag(document.getElementById('gr'),sh,{base:()=>col?off():0,max:off,end:(dy,mv)=>{col=mv<4?!col:col?!(dy<-60):dy>60;pos()}})}
+    drag(document.getElementById('gr'),sh,{base:()=>col?off():0,max:off,end:(dy,mv)=>{const o=col;col=mv<4?!col:col?!(dy<-60):dy>60;if(o!=col)draw();else pos()}})}
   const md=document.getElementById('md');
   if(md)drag(document.getElementById('mg'),md,{base:()=>0,max:()=>md.offsetHeight,end:(dy,mv,cur)=>cur>110?closeM():md.style.transform='translateY(0)'})}
-function closeM(){const md=document.getElementById('md');if(md)md.style.transform='translateY(100%)';setTimeout(()=>{modal=false;warn=false;editing=null;dl=false;imp=null;impDone='';lvId=null;draw()},220)}
+function closeM(){const md=document.getElementById('md');if(md)md.style.transform='translateY(100%)';setTimeout(()=>{modal=false;warn=false;editing=null;dl=false;imp=null;impDone='';lvId=null;swId=null;bhId=null;draw()},220)}
 const fv=i=>document.getElementById(i).value,wn=t=>{document.getElementById('wn').textContent=t};
 function save(){const ed=editing,d=ed||fromIso(fv('f-d')),a=fv('f-a'),b=fv('f-b');
   if(isNaN(d)||!a||!b||b<=a)return wn('Pick a date and an end time after the start.');
@@ -127,15 +164,16 @@ function save(){const ed=editing,d=ed||fromIso(fv('f-d')),a=fv('f-a'),b=fv('f-b'
 function delShift(){const b=document.getElementById('dl');
   if(!dl){dl=true;b.textContent='Tap again to confirm delete';return}
   xS(editing);delete S[editing];work.splice(work.indexOf(editing),1);closeM()}
-function modalHTML(){const ed=editing,x=ed?S[ed]:{s:'07:00',e:'14:48',st:'Scheduled',p:0},dv=ed||sel;
-  const opts=[['Scheduled','Scheduled'],['Planned','Planned'],['Review','Under Review'],['Approved','Approved'],['Denied','Denied']].map(o=>`<option value="${o[0]}" ${o[0]==x.st?'selected':''}>${o[1]}</option>`).join('');
+function qp(k){document.getElementById('f-a').value=TYPES[k].s;document.getElementById('f-b').value=TYPES[k].e}
+function modalHTML(){const ed=editing,x=ed?S[ed]:{s:TYPES.E.s,e:TYPES.E.e,st:'Scheduled',p:0},dv=ed||sel;
+  const opts=[['Scheduled','Scheduled'],['Planned','Planned'],['Review','Under Review'],['Approved','Approved']].map(o=>`<option value="${o[0]}" ${o[0]==x.st?'selected':''}>${o[1]}</option>`).join('');
   return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${ed?'Edit shift · '+fd(ed):'Add shift'}</h2>
-  <div class="two"><div class="f"><label>Date</label><input id="f-d" type="date" value="${iso(dv)}" ${ed?'disabled':''}></div>
+  <div class="qp"><button type="button" onclick="qp('E')">E · Early ${TYPES.E.s}-${TYPES.E.e}</button><button type="button" onclick="qp('L')">L · Late ${TYPES.L.s}-${TYPES.L.e}</button></div><div class="two"><div class="f"><label>Date</label><input id="f-d" type="date" value="${iso(dv)}" ${ed?'disabled':''}></div>
   <div class="f"><label>Status</label><select id="f-s">${opts}</select></div>
   <div class="f"><label>Start</label><input id="f-a" type="time" value="${x.s}"></div><div class="f"><label>End</label><input id="f-b" type="time" value="${x.e}"></div></div>
   <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" id="sv" onclick="save()">${ed?'Save changes':'Save shift'}</button>${ed?'<button class="btn" id="dl" style="background:var(--red)" onclick="delShift()">Delete shift</button>':''}</div></div>`}
-const EX='Date,Start Time,End Time,Status\n2026-10-03,07:00,14:48,Scheduled\n2026-10-07,14:00,21:48,Planned\n2026-10-05,07:00,14:48,Scheduled\n2026-11-02,07:00,14:48,Scheduled';
-const SM={scheduled:'Scheduled',planned:'Planned',review:'Review',underreview:'Review',approved:'Approved',completed:'Approved',denied:'Denied'};
+const EX='Date,Start Time,End Time,Status\n2026-10-03,08:50,16:38,Scheduled\n2026-10-07,09:22,17:10,Planned\n2026-10-05,08:50,16:38,Scheduled\n2026-11-02,08:50,16:38,Scheduled';
+const SM={scheduled:'Scheduled',planned:'Planned',review:'Review',underreview:'Review',approved:'Approved',completed:'Approved'};
 const esc=t=>String(t).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])),pad=n=>String(n).padStart(2,'0'),tm=n=>pad(Math.floor(n/60))+':'+pad(n%60);
 const pick=(o,k)=>{const key=Object.keys(o).find(x=>x.toLowerCase().replace(/[^a-z]/g,'').startsWith(k));return key===undefined?'':o[key]};
 function csv(t){const L=t.trim().split(/\r?\n/).filter(x=>x.trim());if(L.length<2)return[];const dl=[',',';','\t'].sort((a,b)=>L[0].split(b).length-L[0].split(a).length)[0];const sp=l=>l.split(dl).map(c=>c.trim().replace(/^"|"$/g,''));const H=sp(L[0]);return L.slice(1).map(l=>{const c=sp(l),o={};H.forEach((h,i)=>o[h]=c[i]??'');return o})}
@@ -147,7 +185,7 @@ function build(objs){const seen=new Set();imp=[];impDone='';objs.forEach((o,i)=>
   const r={lab:dt?`${dt.y}-${pad(dt.m)}-${pad(dt.d)}`:'Row '+(i+2),d:dt&&UD(E(dt.y,dt.m-1,dt.d)).getUTCDate()==dt.d?E(dt.y,dt.m-1,dt.d):0,s:a,e:b,st,p,err:'',kind:'',act:'skip'};
   if(!dt)r.err='Unreadable date';else if(!r.d)r.err='Not a real calendar date';
   else if(a==null||b==null)r.err='Unreadable start or end time';else if(b<=a)r.err='End must be after start (overnight not supported yet)';
-  else if(!st)r.err='Unknown status "'+sr+'"';else if(isNaN(p))r.err='Unreadable partial hours';else if(seen.has(r.d))r.err='Duplicate date in file';
+  else if(!st)r.err=/^denied$/i.test(sr)?'Shifts cannot be Denied (the company sets the schedule)':'Unknown status "'+sr+'"';else if(isNaN(p))r.err='Unreadable partial hours';else if(seen.has(r.d))r.err='Duplicate date in file';
   if(!r.err){seen.add(r.d);r.kind=work.includes(r.d)?'conflict':'new'}imp.push(r)})}
 const iw=t=>{const e=document.getElementById('iw');if(e)e.textContent=t};
 function pv(){const o=csv(document.getElementById('imp-t').value);if(!o.length)return iw('Paste a header row and at least one data row.');build(o);draw()}
@@ -159,9 +197,27 @@ function ub(){const n=cnt(),b=document.getElementById('ib');b.textContent=`Impor
 function doImport(){let a=0,rp=0;imp.forEach(r=>{if(r.err||(r.kind=='conflict'&&r.act!='replace'))return;if(r.kind=='new'){work.push(r.d);a++}else rp++;S[r.d]={...(S[r.d]||{f:''}),s:tm(r.s),e:tm(r.e),st:r.st};pS(r.d)});work.sort((x,y)=>x-y);
   const bad=work.filter(x=>S[x].st!='Denied'&&!off(x)&&check(x).length);
   impDone=`Added ${a}, replaced ${rp}. `+(bad.length?`⚠ These days break your limits: ${bad.map(fd).join(', ')}.`:'All days are within your limits.');imp=null;draw()}
+// ---------- import template ----------
+const TPL_INFO=[['Shift Companion schedule template'],[],['Fill in the Schedule sheet (one row per shift), save the file, then import it from Schedule > Import.'],[],
+  ['Date','YYYY-MM-DD or DD/MM/YYYY. A normal Excel date also works.'],['Start Time','24-hour time, e.g. 08:50'],['End Time','24-hour time, later than the start (shifts cannot cross midnight yet)'],
+  ['Status','Optional. Scheduled (default), Planned, Under Review or Approved'],[],
+  ['One shift per date. If a date already exists in the app you choose Keep existing or Replace in the preview, and nothing is saved until you confirm.'],
+  ['Leave, partial time off and swaps are not part of this file. Use the Leave and Swaps tabs.'],['The three example rows are only examples: change or delete them.']];
+const tplRows=()=>[[TODAY+1,'08:50','16:38','Scheduled'],[TODAY+2,'09:22','17:10','Scheduled'],[TODAY+3,'08:50','16:38','Planned']];
+const tplCsv=()=>'Date,Start Time,End Time,Status\r\n'+tplRows().map(r=>[iso(r[0]),r[1],r[2],r[3]].join(',')).join('\r\n')+'\r\n';
+function tplWorkbook(){const rows=tplRows(),ws=XLSX.utils.aoa_to_sheet([['Date','Start Time','End Time','Status'],...rows.map(r=>[r[0]+25569,hm(r[1])/1440,hm(r[2])/1440,r[3]])]);   // 25569 = Excel serial of 1970-01-01
+  rows.forEach((_,i)=>{ws['A'+(i+2)].z='yyyy-mm-dd';ws['B'+(i+2)].z='hh:mm';ws['C'+(i+2)].z='hh:mm'});
+  ws['!cols']=[{wch:13},{wch:11},{wch:11},{wch:14}];const info=XLSX.utils.aoa_to_sheet(TPL_INFO);info['!cols']=[{wch:14},{wch:84}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Schedule');XLSX.utils.book_append_sheet(wb,info,'Instructions');return wb}
+function saveBlob(parts,type,name){const u=URL.createObjectURL(new Blob(parts,{type})),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
+function dlTpl(kind){if(kind=='csv')return saveBlob([tplCsv()],'text/csv;charset=utf-8','shift-schedule-template.csv');
+  if(typeof XLSX=='undefined')return iw('The Excel library did not load. Use the CSV template instead.');
+  saveBlob([XLSX.write(tplWorkbook(),{bookType:'xlsx',type:'array'})],'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','shift-schedule-template.xlsx')}
 function impHTML(){let b;
   if(impDone)b=`<div class="card"><div class="t">✓ Import finished</div><div class="m" style="margin-top:6px">${esc(impDone)}</div></div><button class="btn" onclick="closeM()">Done</button>`;
-  else if(!imp)b=`<div class="m">Columns: Date, Start Time, End Time, Status (extra columns are ignored). Partial time off is requested from the Leave tab.<br>Date as YYYY-MM-DD or DD/MM/YYYY · times in 24h (07:00) · status: Scheduled, Planned, Under Review, Approved, Denied.</div>
+  else if(!imp)b=`<div class="m">Columns: Date, Start Time, End Time, Status (extra columns are ignored). Partial time off is requested from the Leave tab.<br>Date as YYYY-MM-DD or DD/MM/YYYY · times in 24h (07:00) · status (optional): Scheduled, Planned, Under Review, Approved.</div>
+  <div class="m" style="margin-top:10px">Not sure of the format? Download a template, fill it in, then choose it below.</div>
+  <div class="two" style="margin-bottom:4px"><button class="btn" onclick="dlTpl('xlsx')">Excel template</button><button class="btn" style="background:#8a97b8" onclick="dlTpl('csv')">CSV template</button></div>
   <div class="f"><label>Excel or CSV file</label><input type="file" accept=".xlsx,.xls,.csv,.txt" onchange="readFile(this.files[0])"></div>
   <div class="f"><label>…or paste CSV</label><textarea id="imp-t" rows="5" placeholder="Date,Start Time,End Time,Status"></textarea></div>
   <div id="iw" class="bad m" style="min-height:16px;margin-top:6px"></div><div class="two"><button class="btn" style="background:#8a97b8" onclick="document.getElementById('imp-t').value=EX">Load example</button><button class="btn" onclick="pv()">Preview</button></div>`;
@@ -169,14 +225,63 @@ function impHTML(){let b;
     b=`<div class="m" style="margin-bottom:8px">${nn} new · ${nc} clash with existing shifts · ${ne} with errors. Rows with errors are never imported.</div>`+(imp.length?imp.map((r,i)=>`<div class="card row" style="padding:9px 12px"><div><div class="t">${r.lab}${r.err?'':' · '+tm(r.s)+'–'+tm(r.e)}</div><div class="m">${r.err?esc(r.err):(lab[r.st]||r.st)}</div></div>${r.err?'<span class="pill st-Denied">Error</span>':r.kind=='new'?'<span class="pill st-Approved">New</span>':`<select style="width:auto" onchange="imp[${i}].act=this.value;ub()"><option value="skip">Keep existing</option><option value="replace">Replace</option></select>`}</div>`).join(''):'<div class="card">No rows found.</div>')+
     `<div class="two"><button class="btn" style="background:#8a97b8" onclick="imp=null;draw()">Back</button><button class="btn" id="ib" onclick="doImport()" ${cnt()?'':'disabled'}>Import ${cnt()} shifts</button></div>`}
   return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>Import schedule</h2>${b}</div></div>`}
+// ---------- swap log ----------
+const SWST=[['Planned','Planned'],['Review','Under Review'],['Approved','Approved'],['Denied','Denied']];
+const swapTitle=w=>w.give&&w.take?`Give ${fd(w.give)} ⇄ Take ${fd(w.take)}`:w.give?`Give away ${fd(w.give)}`:`Take ${fd(w.take)}`;
+const swapText=w=>swapTitle(w)+(w.who?' with '+w.who:'');
+const fuOpen=w=>w.fu&&(w.st=='Planned'||w.st=='Review');
+function swapHTML(){const w=swId?swapLog.find(x=>x.id==swId):null,x=w||{give:0,take:0,who:'',st:'Planned',fu:0,note:''},dv=v=>v?iso(v):'';
+  return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${w?'Edit swap':'Log a swap'}</h2>
+  <div class="two"><div class="f"><label>I give away</label><input id="w-g" type="date" value="${dv(x.give)}" onchange="wr()"></div><div class="f"><label>I take</label><input id="w-t" type="date" value="${dv(x.take)}" onchange="wr()"></div>
+  <div class="f"><label>With</label><input id="w-w" value="${esc(x.who||'')}" placeholder="Colleague name"></div><div class="f"><label>Status</label><select id="w-s">${SWST.map(o=>`<option value="${o[0]}" ${o[0]==x.st?'selected':''}>${o[1]}</option>`).join('')}</select></div>
+  <div class="f"><label>Follow up on (optional)</label><input id="w-r" type="date" value="${dv(x.fu)}"></div><div class="f"><label>Note (optional)</label><input id="w-n" value="${esc(x.note||'')}"></div></div>
+  <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" id="sv" onclick="saveW()">${w?'Save changes':'Save swap'}</button>${w?'<button class="btn" id="dl" style="background:var(--red)" onclick="delW()">Delete swap</button>':''}</div></div>`}
+function wr(){warn=false;const b=document.getElementById('sv');if(b)b.textContent=swId?'Save changes':'Save swap';wn('')}
+function saveW(){const gv=fv('w-g'),tv=fv('w-t'),rv=fv('w-r'),give=gv?fromIso(gv):0,take=tv?fromIso(tv):0,fu=rv?fromIso(rv):0,st=fv('w-s'),who=fv('w-w').trim(),note=fv('w-n').trim();
+  if(isNaN(give)||isNaN(take)||isNaN(fu))return wn('Check the dates.');
+  if(!give&&!take)return wn('Pick the day you give away, the day you take, or both.');
+  if(give&&give==take)return wn('The give and take days must be different.');
+  const old=swId?swapLog.find(x=>x.id==swId):null,msgs=[];
+  if(st!='Denied'&&(!old||old.give!=give||old.take!=take)){
+    if(give&&!(S[give]&&S[give].st!='Denied'))msgs.push(`You have no shift on ${fd(give)} to give away.`);
+    if(take){if(S[take]&&S[take].st!='Denied')msgs.push(`You already work on ${fd(take)}.`);else if(off(take))msgs.push(`You are on approved leave on ${fd(take)}.`);else msgs.push(...check(take,give))}}
+  if(msgs.length&&!warn){warn=true;document.getElementById('sv').textContent='Save anyway';return wn('⚠ '+msgs.join(' · '))}
+  const rec={id:swId||newId(),give,take,who,st,fu,note};
+  if(old)swapLog[swapLog.indexOf(old)]=rec;else swapLog.push(rec);pW(rec);col=false;closeM()}
+function delW(){const b=document.getElementById('dl');if(!dl){dl=true;b.textContent='Tap again to confirm delete';return}xW(swId);swapLog=swapLog.filter(x=>x.id!=swId);closeM()}
+// ---------- bank holidays ----------
+const HL={earned:['Approved','Earned'],pending:['Planned','Pending'],blocked:['Denied','No TOIL'],off:[null,'']};
+const holNote=s=>({earned:'Worked · +1 TOIL day earned',pending:'Scheduled · +1 TOIL day on the day',blocked:'Full-day leave requested · no TOIL day',off:'Not scheduled · no TOIL day'})[s];
+const holRow=(h,click)=>{const s=holState(h),p=HL[s];return `<div class="card row" ${click?`onclick="openBH(${h.d})" style="cursor:pointer"`:''}><div><div class="t">${esc(h.name)}</div><div class="m">${DAYN[dow(h.d)].slice(0,3)} ${fd(h.d)} ${UD(h.d).getUTCFullYear()} · ${holNote(s)}</div></div>${p[0]?`<span class="pill st-${p[0]}">${p[1]}</span>`:''}</div>`};
+function bhHTML(){const h=bhId?hol(bhId):null,d=h?h.d:sel;
+  return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${h?'Edit bank holiday':'Add bank holiday'}</h2>
+  <div class="two"><div class="f"><label>Date</label><input id="b-d" type="date" value="${iso(d)}" ${h?'disabled':''}></div><div class="f"><label>Name</label><input id="b-n" value="${esc(h?h.name:'')}" placeholder="e.g. Christmas Day"></div></div>
+  <div class="m" style="margin-top:8px">Scheduled to work this day? You earn 1 TOIL day (7h 48m) once it arrives. A full day of leave (PTO, TOIL or sick) on it means no TOIL day; partial leave does not change it.</div>
+  <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" id="sv" onclick="saveBH()">${h?'Save changes':'Add bank holiday'}</button>${h?'<button class="btn" id="dl" style="background:var(--red)" onclick="delBH()">Delete bank holiday</button>':''}</div></div>`}
+function saveBH(){const d=bhId||fromIso(fv('b-d')),name=fv('b-n').trim()||'Bank holiday';
+  if(isNaN(d))return wn('Pick a date.');
+  if(!bhId&&hol(d))return wn('Already in the list: '+hol(d).name);
+  const rec={d,name};holidays=holidays.filter(h=>h.d!=d);holidays.push(rec);pH(rec);closeM()}
+function delBH(){const b=document.getElementById('dl');if(!dl){dl=true;b.textContent='Tap again to confirm delete';return}xH(bhId);holidays=holidays.filter(h=>h.d!=bhId);closeM()}
+function bhmHTML(){return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>Add several bank holidays</h2>
+  <div class="m">One per line: the date, then the name. Dates as YYYY-MM-DD or DD/MM/YYYY. Existing dates are updated.</div>
+  <div class="f"><textarea id="bm-t" rows="8" placeholder="2026-12-25 Christmas Day&#10;2026-12-26 Boxing Day"></textarea></div>
+  <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" onclick="saveBHM()">Add all</button></div></div>`}
+function saveBHM(){const lines=fv('bm-t').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);if(!lines.length)return wn('Paste at least one line.');
+  const recs=[];
+  for(let i=0;i<lines.length;i++){const l=lines[i],m=l.match(/^(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})[\s,;]*(.*)$/),dt=m&&pd(m[1]),d=dt&&UD(E(dt.y,dt.m-1,dt.d)).getUTCDate()==dt.d?E(dt.y,dt.m-1,dt.d):NaN;
+    if(isNaN(d))return wn(`Line ${i+1} not understood: "${l.slice(0,40)}"`);recs.push({d,name:(m[2]||'').trim()||'Bank holiday'})}
+  recs.forEach(r=>{holidays=holidays.filter(h=>h.d!=r.d);holidays.push(r);pH(r)});closeM()}
 function draw(){const v=[sched,swaps,leave,rules][tab]();
-  document.getElementById('app').innerHTML=v+`<button class="fab" onclick="openM(null)">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal?modalHTML():'');wire();if(modal=='lv')lu()}
+  document.getElementById('app').innerHTML=v+`<button class="fab" onclick="openM(null)">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal?modalHTML():'');wire();if(modal=='lv')lu()}
 function tsv(){const it=[];
   work.forEach(d=>{const x=S[d];it.push([d,0,'Shift','',x.s,x.e,hm(x.e)-hm(x.s),lab[x.st]||x.st,x.f||'']) });
   leaves.forEach(l=>it.push([l.d,1,'Leave',l.type,l.full?'':l.s,l.full?'':l.e,dur(l),lab[l.st]||l.st,l.full?'Full day':'Partial']));
   it.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
   const rows=[['Date','Weekday','Kind','Leave type','Start','End','Minutes','Status','Note'],...it.map(r=>[iso(r[0]),DAYN[dow(r[0])],...r.slice(2)])];
   rows.push([],['Balances (minutes remaining)']);Object.keys(base).forEach(k=>rows.push(['','','Balance',k,'','',rem(k),'Remaining','']));
+  if(holidays.length){rows.push([],['Bank holidays (TOIL day = 468 min)']);[...holidays].sort((a,b)=>a.d-b.d).forEach(h=>{const s=holState(h);rows.push([iso(h.d),DAYN[dow(h.d)],'Bank holiday','','','',s=='earned'?TOIL_DAY:0,({off:'Not scheduled',pending:'Pending',earned:'TOIL earned',blocked:'Full-day leave, no TOIL'})[s],h.name])})}
+  if(swapLog.length){rows.push([],['Swaps']);[...swapLog].sort((a,b)=>(a.give||a.take)-(b.give||b.take)).forEach(w=>rows.push([iso(w.give||w.take),DAYN[dow(w.give||w.take)],'Swap',w.who||'','','','',lab[w.st]||w.st,swapTitle(w)+(w.note?' · '+w.note:'')]))}
   return rows.map(r=>r.join('\t')).join('\n')}
 async function cp(){const t=document.getElementById('ex-t');t.select();let ok=false;try{await navigator.clipboard.writeText(t.value);ok=true}catch(e){try{ok=document.execCommand('copy')}catch(e2){}}
   document.getElementById('ex-m').textContent=ok?'Copied. Paste into cell A1 of a Google Sheet.':'Could not copy automatically. Select the text and copy it.'}
@@ -184,33 +289,85 @@ function expHTML(){return `<div class="ov" onclick="if(event.target==this)closeM
   <div class="m">All shifts, leave requests and remaining balances, in minutes, sorted by date. Tab-separated, so it lands in separate columns when pasted into Google Sheets.</div>
   <div class="f"><textarea id="ex-t" rows="8" readonly style="font:11px monospace;white-space:pre">${esc(tsv())}</textarea></div>
   <div id="ex-m" class="ok m" style="min-height:16px;margin-top:6px"></div><div class="two"><button class="btn" style="background:#8a97b8" onclick="closeM()">Close</button><button class="btn" onclick="cp()">Copy</button></div></div></div>`}
-const DEMO=structuredClone({S,work,leaves});
+const DEMO=structuredClone({S,work,leaves,
+  holidays:[{d:O+5,name:'Demo holiday (leave requested)'},{d:O+12,name:'Demo holiday (worked)'},{d:O+14,name:'Demo holiday (not scheduled)'}],
+  swapLog:[{id:9001,give:O+13,take:O+14,who:'Sam',st:'Approved',fu:0,note:''},{id:9002,give:O+27,take:O+28,who:'Alex',st:'Review',fu:O+8,note:'Waiting on manager'}]});
 let db=null,dbOk=false,cl=false;
-const dbOpen=()=>new Promise((res,rej)=>{try{const r=indexedDB.open('shiftapp',1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('shifts',{keyPath:'d'});d.createObjectStore('leaves',{keyPath:'id'});d.createObjectStore('meta',{keyPath:'k'})};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);r.onblocked=()=>rej('blocked')}catch(e){rej(e)}});
+const dbOpen=()=>new Promise((res,rej)=>{try{const r=indexedDB.open('shiftapp',2);r.onupgradeneeded=()=>{const d=r.result,mk=(n,kp)=>{if(!d.objectStoreNames.contains(n))d.createObjectStore(n,{keyPath:kp})};mk('shifts','d');mk('leaves','id');mk('meta','k');mk('holidays','d');mk('swaps','id')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);r.onblocked=()=>rej('blocked')}catch(e){rej(e)}});
 const getAll=n=>new Promise((res,rej)=>{const q=db.transaction(n).objectStore(n).getAll();q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)});
 const put=(n,v)=>{if(!dbOk)return;try{const t=db.transaction(n,'readwrite');t.objectStore(n).put(v);t.oncomplete=()=>window.dispatchEvent(new Event('localchange'));t.onerror=()=>{dbOk=false}}catch(e){dbOk=false}};
 const pS=d=>{if(S[d])put('shifts',{...S[d],d,u:Date.now(),dirty:1})},xS=d=>put('shifts',{d,del:true,u:Date.now(),dirty:1});
 const pL=l=>put('leaves',{...l,u:Date.now(),dirty:1}),xL=id=>put('leaves',{id,del:true,u:Date.now(),dirty:1});
-const pM=()=>put('meta',{k:'rules',v:{...R},u:Date.now(),dirty:1}),pB=()=>put('meta',{k:'balances',v:{...base},u:Date.now(),dirty:1});
-async function boot(){try{db=await dbOpen();dbOk=true;const[sh,lv,me]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta')]),m=Object.fromEntries(me.map(x=>[x.k,x.v]));
-  if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);sh.filter(x=>!x.del).forEach(x=>{S[x.d]=x;work.push(x.d)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del);if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
-  else{work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];put('meta',{k:'seeded',v:1})}}catch(e){dbOk=false}}
-function wipe(){work.forEach(d=>xS(d));leaves.forEach(l=>xL(l.id));work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[]}
-function demo(){wipe();const D=structuredClone(DEMO);Object.assign(S,D.S);work.push(...D.work);leaves=D.leaves;work.forEach(pS);leaves.forEach(pL);lid=Math.max(lid,5);Object.assign(base,DEMO_BASE);pB();draw()}
+const pH=h=>put('holidays',{...h,u:Date.now(),dirty:1}),xH=d=>put('holidays',{d,del:true,u:Date.now(),dirty:1});
+const pW=w=>put('swaps',{...w,u:Date.now(),dirty:1}),xW=id=>put('swaps',{id,del:true,u:Date.now(),dirty:1});
+const pM=()=>{put('meta',{k:'rules',v:{...R},u:Date.now(),dirty:1});armNotifs()},pB=()=>put('meta',{k:'balances',v:{...base},u:Date.now(),dirty:1});
+async function boot(){try{db=await dbOpen();dbOk=true;const[sh,lv,me,ho,sw]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]),m=Object.fromEntries(me.map(x=>[x.k,x.v]));
+  if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);sh.filter(x=>!x.del).forEach(x=>{S[x.d]=x;work.push(x.d)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del);holidays=ho.filter(x=>!x.del);swapLog=sw.filter(x=>!x.del);if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
+  else{work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[];put('meta',{k:'seeded',v:1})}}catch(e){dbOk=false}}
+function wipe(){work.forEach(d=>xS(d));leaves.forEach(l=>xL(l.id));holidays.forEach(h=>xH(h.d));swapLog.forEach(w=>xW(w.id));work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[]}
+function demo(){wipe();const D=structuredClone(DEMO);Object.assign(S,D.S);work.push(...D.work);leaves=D.leaves;holidays=D.holidays;swapLog=D.swapLog;work.forEach(pS);leaves.forEach(pL);holidays.forEach(pH);swapLog.forEach(pW);lid=Math.max(lid,5);Object.assign(base,DEMO_BASE);pB();draw()}
 function clr(){const b=document.getElementById('clr');if(!cl){cl=true;b.textContent='Tap again to erase everything (also in the cloud once synced)';return}cl=false;wipe();draw()}
 const ready=boot();ready.then(draw);
 window.redraw=()=>{const a=document.activeElement;if(!modal&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)))draw()};
 const idbGet=(n,k)=>new Promise((res,rej)=>{const q=db.transaction(n).objectStore(n).get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)});
 const putRaw=(n,v)=>new Promise((res,rej)=>{const t=db.transaction(n,'readwrite');t.objectStore(n).put(v);t.oncomplete=res;t.onerror=()=>rej(t.error)});
-const keyOf=(n,r)=>n=='shifts'?r.d:n=='leaves'?r.id:r.k;
+const keyOf=(n,r)=>n=='shifts'||n=='holidays'?r.d:n=='leaves'||n=='swaps'?r.id:r.k;
 // Bridge used by js/sync.js. Records merge per record: the newest edit time (u) wins.
 window.syncApi={
-  async dirty(){await ready;const[a,b,c]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta')]);return{shifts:a.filter(x=>x.dirty),leaves:b.filter(x=>x.dirty),rules:c.filter(x=>(x.k=='rules'||x.k=='balances')&&x.dirty)}},
+  async dirty(){await ready;const[a,b,c,h,w]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]);return{shifts:a.filter(x=>x.dirty),leaves:b.filter(x=>x.dirty),holidays:h.filter(x=>x.dirty),swaps:w.filter(x=>x.dirty),rules:c.filter(x=>(x.k=='rules'||x.k=='balances')&&x.dirty)}},
   async apply(n,r){await ready;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u>=r.u)return;await putRaw(n,{...r,dirty:0});
     if(n=='shifts'){if(r.del){delete S[r.d];const i=work.indexOf(r.d);if(i>=0)work.splice(i,1)}else{S[r.d]={...r};if(!work.includes(r.d)){work.push(r.d);work.sort((a,b)=>a-b)}}}
     else if(n=='leaves'){leaves=leaves.filter(x=>x.id!=r.id);if(!r.del)leaves.push({...r})}
+    else if(n=='holidays'){holidays=holidays.filter(x=>x.d!=r.d);if(!r.del)holidays.push({...r})}
+    else if(n=='swaps'){swapLog=swapLog.filter(x=>x.id!=r.id);if(!r.del)swapLog.push({...r})}
     else if(r.k=='rules')Object.assign(R,r.v);else if(r.k=='balances')Object.assign(base,r.v);
-    window.redraw()},
+    armNotifs();window.redraw()},
   async clean(n,r){await ready;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u==r.u)await putRaw(n,{...cur,dirty:0})}
 };
+// ---------- leave-by reminders + calendar file ----------
+const NS={get(){let v={};try{v=JSON.parse(localStorage.getItem('sc-notif')||'{}')}catch(e){}return{on:false,lead:10,...v}},set(o){try{localStorage.setItem('sc-notif',JSON.stringify({...NS.get(),...o}))}catch(e){}}};
+const canNotify=()=>typeof Notification!='undefined'&&typeof navigator!='undefined'&&'serviceWorker' in navigator;
+const perm=()=>canNotify()?Notification.permission:'unsupported';
+const atLocal=(d,min)=>{const u=UD(d);return new Date(u.getUTCFullYear(),u.getUTCMonth(),u.getUTCDate(),0,min).getTime()}; // local wall-clock minute-of-day on civil day d (overflow rolls into adjacent days)
+function evList(now){const td=todayN(now),lead=NS.get().lead,ev=[];
+  for(let d=td-1;d<=td+2;d++){const s=S[d];
+    if(s&&s.st!='Denied'&&!off(d)){const lb=hm(s.s)-R.commute,at=atLocal(d,lb-lead),by=new Date(atLocal(d,lb));
+      ev.push({key:`shift:${d}:${at}`,at,until:atLocal(d,lb),title:'Leave by '+pad(by.getHours())+':'+pad(by.getMinutes()),body:`Shift starts ${s.s} · ${R.commute} min trip`})}
+    swapLog.filter(w=>w.fu==d&&fuOpen(w)).forEach(w=>{const at=atLocal(d,540);ev.push({key:`swap:${w.id}:${at}`,at,until:atLocal(d,1439),title:'Swap follow-up'+(w.who?' · '+w.who:''),body:swapText(w)})})}
+  return ev.sort((a,b)=>a.at-b.at)}
+const shownGet=()=>{try{return JSON.parse(localStorage.getItem('sc-shown')||'{}')}catch(e){return{}}},shownSet=o=>{try{localStorage.setItem('sc-shown',JSON.stringify(o))}catch(e){}};
+async function fire(e){const sh=shownGet(),t=Date.now();if(sh[e.key])return;sh[e.key]=t;for(const k of Object.keys(sh))if(t-sh[k]>3*864e5)delete sh[k];shownSet(sh);
+  try{const reg=await navigator.serviceWorker.ready;await reg.showNotification(e.title,{body:e.body,tag:e.key,icon:'icons/icon-192.png',data:{url:'./'}})}catch(err){}}
+let timers=[];
+function armNotifs(now){now=now||Date.now();timers.forEach(clearTimeout);timers=[];TODAY=todayN(now);
+  if(!NS.get().on||perm()!='granted')return;
+  const sh=shownGet();
+  evList(now).forEach(e=>{if(sh[e.key])return;if(e.at<=now){if(now<e.until)fire(e)}else if(e.at-now<36*36e5)timers.push(setTimeout(()=>fire(e),e.at-now))})}
+function notifCard(){const n=NS.get(),p=perm();let t,m,b='';
+  if(p=='unsupported'){t='Reminders not available';m='This browser cannot show notifications. On iPhone, add the app to your Home Screen first (iOS 16.4 or later).'}
+  else if(p=='denied'){t='Notifications blocked';m='Allow notifications for this site in your browser or phone settings, then come back.'}
+  else if(!n.on||p!='granted'){t='Leave-by reminders are off';m='Get a notification shortly before it is time to leave for work.';b='<button class="btn" onclick="notifOn()">Turn on reminders</button>'}
+  else{t='● Reminders on';m=`Notifies ${n.lead} min before you need to leave (trip ${R.commute} min). It works while the app is open or running in the background. For alerts when the app is closed, use the calendar file below.`;
+    b=`<div class="row" style="margin:10px 0 2px"><div class="t">Remind me before leaving</div><div class="step"><button onclick="setLead(-5)">−</button><b>${n.lead} min</b><button onclick="setLead(5)">+</button></div></div><button class="btn" onclick="notifTest()">Send test notification</button><button class="btn" style="background:#8a97b8" onclick="notifOff()">Turn off</button>`}
+  return `<div class="card"><div class="t">${t}</div><div class="m">${m}</div>${b}</div>`}
+async function notifOn(){if(!canNotify())return;let r='denied';try{r=await Notification.requestPermission()}catch(e){}NS.set({on:r=='granted'});armNotifs();draw()}
+function notifOff(){NS.set({on:false});armNotifs();draw()}
+function setLead(k){NS.set({lead:Math.max(0,Math.min(60,NS.get().lead+k))});armNotifs();draw()}
+function notifTest(){fire({key:'test:'+Date.now(),title:'Leave by 06:15 (test)',body:'Reminders are working.'})}
+function calCard(){return `<div class="card"><div class="t">Phone calendar alerts</div><div class="m">A web app cannot fire alerts while it is closed. Add your next 60 days of shifts to your phone's calendar and its alarms will. Re-add after schedule changes: matching events are updated, but deleted shifts must be removed by hand.</div><div id="ics-m" class="ok m" style="min-height:16px;margin-top:6px"></div><button class="btn" onclick="dlIcs()">Download calendar file (.ics)</button></div>`}
+function icsText(now){now=now||Date.now();const td=todayN(now),lead=NS.get().lead,nl='\r\n',L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Shift Companion//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:Shift Companion'];
+  const stamp=new Date(now).toISOString().replace(/[-:]/g,'').replace(/\.\d+/,''),ldt=(d,min)=>{const t=new Date(atLocal(d,min));return `${t.getFullYear()}${pad(t.getMonth()+1)}${pad(t.getDate())}T${pad(t.getHours())}${pad(t.getMinutes())}00`};
+  const tx=t=>String(t).replace(/[\;,]/g,'\\$&').replace(/\r?\n/g,'\\n'),fold=l=>l.length<=73?l:l.match(/.{1,72}/g).join(nl+' ');
+  [...work].sort((a,b)=>a-b).filter(d=>d>=td&&d<=td+60&&S[d].st!='Denied'&&!off(d)).forEach(d=>{const s=S[d],lb=hm(s.s)-R.commute,by=new Date(atLocal(d,lb)),when=pad(by.getHours())+':'+pad(by.getMinutes());
+    L.push('BEGIN:VEVENT',`UID:shift-${d}@shift-companion`,`DTSTAMP:${stamp}`,`DTSTART:${ldt(d,hm(s.s))}`,`DTEND:${ldt(d,hm(s.e))}`,`SUMMARY:${tx('Shift '+s.s+'-'+s.e)}`,`DESCRIPTION:${tx('Leave by '+when+' ('+R.commute+' min trip)')}`,'BEGIN:VALARM','ACTION:DISPLAY',`DESCRIPTION:${tx('Leave by '+when)}`,`TRIGGER:-PT${R.commute+lead}M`,'END:VALARM','END:VEVENT')});
+  swapLog.filter(w=>fuOpen(w)&&w.fu>=td).forEach(w=>L.push('BEGIN:VEVENT',`UID:swap-${w.id}@shift-companion`,`DTSTAMP:${stamp}`,`DTSTART:${ldt(w.fu,540)}`,`DTEND:${ldt(w.fu,555)}`,`SUMMARY:${tx('Swap follow-up'+(w.who?' - '+w.who:''))}`,`DESCRIPTION:${tx(swapText(w))}`,'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:Swap follow-up','TRIGGER:PT0S','END:VALARM','END:VEVENT'));
+  L.push('END:VCALENDAR');return L.map(fold).join(nl)+nl}
+function dlIcs(){const t=icsText(),n=t.split('BEGIN:VEVENT').length-1,b=new Blob([t],{type:'text/calendar;charset=utf-8'}),u=URL.createObjectURL(b),a=document.createElement('a');
+  a.href=u;a.download='shift-companion.ics';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);
+  const m=document.getElementById('ics-m');if(m)m.textContent=n?`Downloaded ${n} event${n==1?'':'s'}. Open the file to add them to your calendar.`:'Nothing to add: no upcoming shifts in the next 60 days.'}
+let armT=null;
+window.addEventListener('localchange',()=>{clearTimeout(armT);armT=setTimeout(()=>armNotifs(),300)});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){armNotifs();window.redraw&&window.redraw()}});
+setInterval(()=>armNotifs(),15*60*1000);
+ready.then(()=>armNotifs());
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));

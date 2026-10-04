@@ -23,7 +23,7 @@ cd shift-companion
 git init -b main
 git add .
 git commit -m "Initial commit"
-git remote add origin https://github.com/<you>/<repo>.git
+git remote add origin https://github.com/berkgerson-ctrl/ShiftCompanian.git
 git push -u origin main
 ```
 
@@ -31,7 +31,7 @@ git push -u origin main
 
 1. Repository **Settings → Pages**.
 2. Under *Build and deployment*, set **Source** to **GitHub Actions**.
-3. Open the **Actions** tab; the "Test and deploy to GitHub Pages" run should go green (first run can take a minute). Its summary shows your URL, normally `https://<you>.github.io/<repo>/`.
+3. Open the **Actions** tab; the "Test and deploy to GitHub Pages" run should go green (first run can take a minute). Its summary shows your URL, normally `https://berkgerson-ctrl.github.io/ShiftCompanian/`.
 
 If the run fails at *Run sync tests*, open the log: the failing check names what broke.
 
@@ -66,14 +66,14 @@ Without these rules, production mode denies everything and sync will report `per
 
 ### 2.3 Allow your site to sign in
 
-**Authentication → Settings → Authorized domains → Add domain:** `<you>.github.io`
+**Authentication → Settings → Authorized domains → Add domain:** `berkgerson-ctrl.github.io`
 (`localhost` is already allowed for local testing.)
 
 ### 2.4 Add the settings to the app
 
 Edit [`js/firebase-config.js`](../js/firebase-config.js) and replace the four `REPLACE_ME` values with the ones from step 2.1, then commit and push. The workflow redeploys automatically.
 
-The Firebase web config is an identifier, not a secret. If you like, restrict the API key to your site under *Google Cloud console → APIs & Services → Credentials → the browser key → Website restrictions* (`https://<you>.github.io/*`).
+The Firebase web config is an identifier, not a secret. If you like, restrict the API key to your site under *Google Cloud console → APIs & Services → Credentials → the browser key → Website restrictions* (`https://berkgerson-ctrl.github.io/*`).
 
 ### 2.5 First sign-in
 
@@ -105,6 +105,10 @@ Installed copies cache the app for offline use. After you change any file:
 3. Users get the new version the next time they open the app online (a second reopen if the app was already open).
 
 Skipping step 1 is the usual reason a change "does not show up".
+
+### Updating an existing site
+
+When you receive an updated copy of the project, upload its files over the repository **but keep your own `js/firebase-config.js`** (the updated copy either leaves it out or contains the placeholder values). The first load after an update upgrades the on-device database automatically and keeps your data.
 
 ## Backups
 
