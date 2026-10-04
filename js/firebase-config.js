@@ -5,5 +5,8 @@ export const firebaseConfig = {
   apiKey: "AIzaSyB4kZKO27Jxc0yLKCiuMNwvp-jpG6hWSEc",
   authDomain: "shiftcompanian.firebaseapp.com",
   projectId: "shiftcompanian",
-  appId: "1:299166430728:web:a5b86a513aa615bf2603bd"
+  storageBucket: "shiftcompanian.firebasestorage.app",
+  messagingSenderId: "299166430728",
+  appId: "1:299166430728:web:a5b86a513aa615bf2603bd",
+  measurementId: "G-9KLM2JX2BM"
 };
