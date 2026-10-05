@@ -114,3 +114,10 @@ When you receive an updated copy of the project, upload its files over the repos
 
 - **Export for payroll** (Rules tab) copies everything as tab-separated text for Google Sheets.
 - Firebase gives you a cloud copy; the Firestore console can export it if you want a file.
+
+
+## Troubleshooting
+
+**The page is blank after a refresh.** Since 1.4.1 the app shows a recovery screen instead. Tap *Reload*; if it persists tap *Repair app files* (clears the app's saved files only, never your shifts). *Download a backup* saves your data as a JSON file first if you want to be careful. On a phone you can also long-press the app icon > App info > Storage > *Clear cache* (not *Clear storage*, which deletes your data).
+
+**Chrome says the app is already installed but you cannot find it.** Search the app list for "Shift". Older installs are labelled "Shifts". If it is not there, remove any leftover shortcut from the home screen, then in Chrome use menu (3 dots) > *Install app*. Rules > *Install on this phone* shows the current state.

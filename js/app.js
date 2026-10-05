@@ -138,7 +138,7 @@ async function pushSheet(){const u=fv('sh-u').trim(),k=fv('sh-k').trim(),m=docum
   catch(e){m.className='bad m';m.textContent='Could not confirm. Check you are online, the URL is right, and the deployment allows “Anyone”.'}}
 function rules(){const st=(k,l,min,max)=>`<div class="card row"><div class="t">${l}</div><div class="step"><button onclick="R.${k}=Math.max(${min},R.${k}-${k=='commute'?5:1});pM();draw()">−</button><b>${R[k]}${k=='commute'?' min':''}</b><button onclick="R.${k}=Math.min(${max},R.${k}+${k=='commute'?5:1});pM();draw()">+</button></div></div>`;
   return `<div class="dark"><div class="bar"><span></span><span>Rules & Settings</span><span></span></div><div class="sub">Week runs Sunday → Saturday</div></div><div class="page">
-  <button class="btn" style="margin:0 0 6px" onclick="openStats()">Statistics &amp; charts</button>
+  <button class="btn" style="margin:0 0 6px" onclick="openStats()">Statistics &amp; charts</button>${installCard()}
   <h2 style="margin-top:14px">Shift types</h2><div class="m" style="margin-bottom:8px">Your usual shifts. The calendar shows each one's letter and colour; any other hours, or a shift with partial leave, shows C.</div>${TYPES.map((x,i)=>`<div class="card row" onclick="openTy(${i})" style="cursor:pointer"><div class="trow"><u class="tdot" style="background:${x.c}">${esc(x.l)}</u><div><div class="t">${esc(x.n)}</div><div class="m">${x.s}–${x.e}</div></div></div><span class="m">Edit</span></div>`).join('')}<button class="btn" onclick="openTy(null)">Add shift type</button>
   <h2 style="margin-top:14px">Limits</h2><div class="m" style="margin-bottom:8px">Approved full-day leave doesn't count as a workday. Partial leave still does. A week counts toward the month it ends in (Saturday).</div>${st('week','Max workdays / week',1,7)}${st('cons','Max consecutive days',1,14)}${st('sixPerMonth','6-day weeks / month',0,5)}
   <h2>Commute</h2>${st('commute','Travel time to work',5,180)}<div class="m">Used for the “Leave by” reminder on each shift.</div>
@@ -147,7 +147,7 @@ function rules(){const st=(k,l,min,max)=>`<div class="card row"><div class="t">$
   <div class="two"><button class="btn" onclick="openBH(null)">Add holiday</button><button class="btn" style="background:#8a97b8" onclick="modal='bhm';draw()">Add several</button></div>
   <h2 style="margin-top:14px">Opening balances</h2><div class="m" style="margin-bottom:8px">Hours:minutes you had before using this app (e.g. 36:12). Approved leave is deducted from these. TOIL earned on the bank holidays below is added automatically, so leave it out of the TOIL figure.</div>${['PTO','TOIL','Sick'].map(k=>`<div class="card row"><div class="t">${k}</div><input style="width:110px;text-align:right" value="${Math.floor(base[k]/60)}:${pad(base[k]%60)}" onchange="setBal('${k}',this.value)"></div>`).join('')}
   <h2 style="margin-top:14px">Sync</h2><div class="card"><div class="t">${dbOk?'● Saved on this device':'⚠ Not saved: storage unavailable'}</div><div class="m">${dbOk?'Every change is written to this device straight away and works offline.':'This browser is blocking local storage, so changes will be lost when the page reloads.'}</div></div>${syncCard()}
-  <h2 style="margin-top:14px">Google Sheets</h2>${sheetsCard()}<h2 style="margin-top:14px">Data</h2><button class="btn" onclick="modal='exp';draw()">Export for payroll (Google Sheets)</button><button class="btn" style="background:#8a97b8" onclick="demo()">Load demo data</button><button class="btn" id="clr" style="background:var(--red)" onclick="clr()">Clear all data</button></div>`}
+  <h2 style="margin-top:14px">Google Sheets</h2>${sheetsCard()}<h2 style="margin-top:14px">Data</h2><button class="btn" onclick="modal='exp';draw()">Export for payroll (Google Sheets)</button><button class="btn" style="background:#8a97b8" onclick="saveBackup()">Download a backup (JSON)</button><button class="btn" style="background:#8a97b8" onclick="demo()">Load demo data</button><button class="btn" id="clr" style="background:var(--red)" onclick="clr()">Clear all data</button></div>`}
 // ---------- shift type editor ----------
 let tyId=null,tyC=TYPE_COLORS[2],tyDel=false;
 function openTy(i){tyId=i;tyDel=false;tyC=i==null?(TYPE_COLORS.find(c=>!TYPES.some(x=>x.c==c))||TYPE_COLORS[0]):TYPES[i].c;modal='ty';draw()}
@@ -227,6 +227,18 @@ function statsHTML(){const MS=[...Array(12)].map((_,m)=>monthStats(stY,m)),yr=MS
   ${limRow('Six-day weeks',ls.six,R.sixPerMonth,'allowed this month')}${limRow('Busiest week',ls.maxWk,R.week,'workdays allowed per week')}${limRow('Longest run',ls.best,R.cons,'days in a row allowed')}
   <details class="tbl"><summary>View data as a table</summary><table><tr><th>Month</th><th>Hours</th><th>Shifts</th><th>TOIL</th></tr>${MS.map((x,m)=>`<tr><td>${MON[m]}</td><td>${fh(x.mins)}</td><td>${x.n}</td><td>${toilM[m]?fh(toilM[m]):'–'}</td></tr>`).join('')}</table></details>
   </div></div>`}
+
+// ---------- install as an app ----------
+let instEv=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();instEv=e;window.redraw&&window.redraw()});
+window.addEventListener('appinstalled',()=>{instEv=null;window.redraw&&window.redraw()});
+const standalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}catch(e){return false}};
+async function doInstall(){if(!instEv)return;try{instEv.prompt();await instEv.userChoice}catch(e){}instEv=null;draw()}
+function installCard(){const sa=standalone();
+  return `<div class="card" style="margin-top:10px"><div class="t">${sa?'✓ Running as an installed app':'Install on this phone'}</div>`+
+   (sa?'<div class="m">You are using the installed app. It works offline.</div>':
+    instEv?'<div class="m">Adds Shift Companion to your app list and opens it full screen. Works offline.</div><button class="btn" onclick="doInstall()">Install app</button>':
+    '<div class="m">Chrome menu (⋮) → <b>Install app</b> or <b>Add to Home screen</b>. If Chrome says it is already installed, search your app list for “Shift”; it may be labelled “Shifts” or “Shift Companion”. If it truly is not there, Chrome may have only saved a shortcut: remove it and install again.</div>')+`</div>`}
 
 // ---------- success tick ----------
 function showOk(msg){try{const o=document.getElementById('okp');if(o)o.remove();const el=document.createElement('div');el.id='okp';el.className='okp';el.setAttribute('role','status');
@@ -367,7 +379,9 @@ function saveBHM(){const lines=fv('bm-t').split(/\r?\n/).map(x=>x.trim()).filter
 let pTab=null,pModal=false,pSel=null;
 function fxOf(){let f='';if(pTab!==null){if(modal&&!pModal)f='modal';else if(!modal&&tab!==pTab)f=tab>pTab?'tr':'tl';else if(!modal&&!pModal&&tab==0&&sel!==pSel)f='day'}pTab=tab;pModal=!!modal;pSel=sel;return f}
 function draw(){const v=[sched,swaps,leave,rules][tab]();const fx=fxOf(),ap=document.getElementById('app');if(ap.dataset)ap.dataset.fx=fx;
-  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal?modalHTML():'');wire();if(modal=='lv')lu()}
+  const sv=['.page','.sheet','#md'].map(q=>{const e=ap.querySelector(q);return e?e.scrollTop:0});
+  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal?modalHTML():'');if(fx!=='tr'&&fx!=='tl'){const q=ap.querySelector('.page'),w=ap.querySelector('.sheet'),m=ap.querySelector('#md');if(q)q.scrollTop=sv[0];if(w&&fx!=='day')w.scrollTop=sv[1];if(m&&fx!=='modal')m.scrollTop=sv[2]}
+  wire();if(modal=='lv')lu();if(!dbOk&&!document.getElementById('wbar')){const w=document.createElement('div');w.id='wbar';w.className='wbar';w.textContent='Storage unavailable: changes will not be saved. Close other copies of the app and reload.';ap.appendChild(w)}}
 function tsv(){const it=[];
   work.forEach(d=>{const x=S[d];it.push([d,0,'Shift','',x.s,x.e,hm(x.e)-hm(x.s),lab[x.st]||x.st,x.f||'']) });
   leaves.forEach(l=>it.push([l.d,1,'Leave',l.type,l.full?'':l.s,l.full?'':l.e,dur(l),lab[l.st]||l.st,l.full?'Full day':'Partial']));
@@ -387,7 +401,7 @@ const DEMO=structuredClone({S,work,leaves,
   holidays:[{d:O+5,name:'Demo holiday (leave requested)'},{d:O+12,name:'Demo holiday (worked)'},{d:O+14,name:'Demo holiday (not scheduled)'}],
   swapLog:[{id:9001,give:O+13,take:O+14,who:'Sam',st:'Approved',fu:0,note:''},{id:9002,give:O+27,take:O+28,who:'Alex',st:'Review',fu:O+8,note:'Waiting on manager'}]});
 let db=null,dbOk=false,cl=false;
-const dbOpen=()=>new Promise((res,rej)=>{try{const r=indexedDB.open('shiftapp',2);r.onupgradeneeded=()=>{const d=r.result,mk=(n,kp)=>{if(!d.objectStoreNames.contains(n))d.createObjectStore(n,{keyPath:kp})};mk('shifts','d');mk('leaves','id');mk('meta','k');mk('holidays','d');mk('swaps','id')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);r.onblocked=()=>rej('blocked')}catch(e){rej(e)}});
+const dbOpen=()=>new Promise((res,rej)=>{try{const r=indexedDB.open('shiftapp',2),to=setTimeout(()=>rej('timeout'),8000);r.onupgradeneeded=()=>{const d=r.result,mk=(n,kp)=>{if(!d.objectStoreNames.contains(n))d.createObjectStore(n,{keyPath:kp})};mk('shifts','d');mk('leaves','id');mk('meta','k');mk('holidays','d');mk('swaps','id')};r.onsuccess=()=>{clearTimeout(to);const d=r.result;d.onversionchange=()=>d.close();res(d)};r.onerror=()=>{clearTimeout(to);rej(r.error)}}catch(e){rej(e)}});
 const getAll=n=>new Promise((res,rej)=>{const q=db.transaction(n).objectStore(n).getAll();q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)});
 const put=(n,v)=>{if(!dbOk)return;try{const t=db.transaction(n,'readwrite');t.objectStore(n).put(v);t.oncomplete=()=>window.dispatchEvent(new Event('localchange'));t.onerror=()=>{dbOk=false}}catch(e){dbOk=false}};
 const pS=d=>{if(S[d])put('shifts',{...S[d],d,u:Date.now(),dirty:1})},xS=d=>put('shifts',{d,del:true,u:Date.now(),dirty:1});
@@ -395,14 +409,31 @@ const pL=l=>put('leaves',{...l,u:Date.now(),dirty:1}),xL=id=>put('leaves',{id,de
 const pH=h=>put('holidays',{...h,u:Date.now(),dirty:1}),xH=d=>put('holidays',{d,del:true,u:Date.now(),dirty:1});
 const pW=w=>put('swaps',{...w,u:Date.now(),dirty:1}),xW=id=>put('swaps',{id,del:true,u:Date.now(),dirty:1});
 const pM=()=>{put('meta',{k:'rules',v:{...R},u:Date.now(),dirty:1});armNotifs()},pB=()=>put('meta',{k:'balances',v:{...base},u:Date.now(),dirty:1}),pT=()=>put('meta',{k:'types',v:TYPES.map(x=>({...x})),u:Date.now(),dirty:1});
-async function boot(){try{db=await dbOpen();dbOk=true;const[sh,lv,me,ho,sw]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]),m=Object.fromEntries(me.map(x=>[x.k,x.v]));
+let bootErr=null;
+async function boot(){try{db=await dbOpen();dbOk=true}catch(e){dbOk=false;bootErr=e;return}
+  try{const[sh,lv,me,ho,sw]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]),m=Object.fromEntries(me.map(x=>[x.k,x.v]));
   if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);sh.filter(x=>!x.del).forEach(x=>{S[x.d]=x;work.push(x.d)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del);holidays=ho.filter(x=>!x.del);swapLog=sw.filter(x=>!x.del);if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);if(Array.isArray(m.types)&&m.types.length)TYPES=m.types;lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
-  else{work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[];put('meta',{k:'seeded',v:1})}}catch(e){dbOk=false}}
+  else{work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[];put('meta',{k:'seeded',v:1})}}catch(e){bootErr=e}}
 function wipe(){work.forEach(d=>xS(d));leaves.forEach(l=>xL(l.id));holidays.forEach(h=>xH(h.d));swapLog.forEach(w=>xW(w.id));work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[]}
 function demo(){wipe();const D=structuredClone(DEMO);Object.assign(S,D.S);work.push(...D.work);leaves=D.leaves;holidays=D.holidays;swapLog=D.swapLog;work.forEach(pS);leaves.forEach(pL);holidays.forEach(pH);swapLog.forEach(pW);lid=Math.max(lid,5);Object.assign(base,DEMO_BASE);pB();draw()}
 function clr(){const b=document.getElementById('clr');if(!cl){cl=true;b.textContent='Tap again to erase everything (also in the cloud once synced)';return}cl=false;wipe();draw()}
-const ready=boot();ready.then(draw);
-window.redraw=()=>{const a=document.activeElement;if(!modal&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)))draw()};
+const ready=boot();
+const isBlank=()=>{const a=document.getElementById('app');return !a||!a.children.length||!!a.querySelector('.boot')};
+let crashed=false;
+function crash(e){crashed=true;try{const m=String(e&&(e.stack||e.message)||e||'Unknown error').slice(0,700),a=document.getElementById('app');
+  a.innerHTML=`<div class="crash"><h2>Something went wrong</h2><p>Your shifts are stored on this device and have not been deleted.</p><pre>${esc(m)}</pre><button class="btn" onclick="location.reload()">Reload</button><button class="btn" style="background:#8a97b8" onclick="repairApp()">Repair app files (keeps your data)</button><button class="btn" style="background:#8a97b8" onclick="saveBackup()">Download a backup of my data</button></div>`}catch(x){}}
+async function repairApp(){try{const rs=await navigator.serviceWorker.getRegistrations();await Promise.all(rs.map(r=>r.unregister()));const ks=await caches.keys();await Promise.all(ks.map(k=>caches.delete(k)))}catch(e){}location.reload()}
+const rawDump=()=>new Promise((res,rej)=>{const r=indexedDB.open('shiftapp');r.onerror=()=>rej(r.error);r.onsuccess=()=>{const d=r.result,ns=[...d.objectStoreNames],o={},tx=d.transaction(ns);ns.forEach(n=>{const q=tx.objectStore(n).getAll();q.onsuccess=()=>o[n]=q.result});tx.oncomplete=()=>{d.close();res(o)};tx.onerror=()=>rej(tx.error)}});
+async function saveBackup(){try{const o=await rawDump(),b=new Blob([JSON.stringify({app:'shift-companion',saved:new Date().toISOString(),data:o},null,1)],{type:'application/json'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='shift-companion-backup.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}catch(e){alert('Could not read the saved data: '+e)}}
+let booted=false;
+ready.then(()=>{booted=true;try{draw()}catch(e){crash(e)}});
+window.addEventListener('error',ev=>{if(isBlank())crash(ev.error||ev.message)});
+window.addEventListener('unhandledrejection',ev=>{if(isBlank())crash(ev.reason)});
+setTimeout(()=>{if(isBlank())crash('The app did not start within 12 seconds.')},12000);
+let rdT=null,lastAct=0;
+['touchstart','touchmove','scroll','pointerdown','pointermove'].forEach(ev=>document.addEventListener(ev,()=>{lastAct=Date.now()},{passive:true,capture:true}));
+window.redraw=()=>{clearTimeout(rdT);rdT=setTimeout(function go(){const q=Date.now()-lastAct;if(q<600){rdT=setTimeout(go,600-q);return}
+  const a=document.activeElement;if(booted&&!crashed&&!modal&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))){try{draw()}catch(e){console.error(e)}}},80)};
 const idbGet=(n,k)=>new Promise((res,rej)=>{const q=db.transaction(n).objectStore(n).get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)});
 const putRaw=(n,v)=>new Promise((res,rej)=>{const t=db.transaction(n,'readwrite');t.objectStore(n).put(v);t.oncomplete=res;t.onerror=()=>rej(t.error)});
 const keyOf=(n,r)=>n=='shifts'||n=='holidays'?r.d:n=='leaves'||n=='swaps'?r.id:r.k;

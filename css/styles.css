@@ -158,3 +158,15 @@ input,select,textarea{padding:9px;border-radius:10px;border:1px solid #cdd8ee;fo
 @keyframes okpop{0%{opacity:0;transform:translate(-50%,-50%) scale(.7)}12%{opacity:1;transform:translate(-50%,-50%) scale(1.06)}20%{transform:translate(-50%,-50%) scale(1)}82%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(.96)}}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}}
+
+/* ===== v1.4.1: recovery screen + storage warning ===== */
+.crash{flex:1;overflow:auto;padding:28px 20px;color:#fff;background:var(--navy)}
+.crash h2{margin:0 0 8px}.crash p{color:#c9d3ee}
+.crash pre{white-space:pre-wrap;word-break:break-word;background:#ffffff14;border-radius:10px;padding:10px;font-size:11px;max-height:180px;overflow:auto}
+.wbar{position:absolute;left:0;right:0;top:0;z-index:20;background:var(--red);color:#fff;font-size:12px;padding:6px 12px;text-align:center}
+
+/* ===== v1.4.2: no accidental pull-to-refresh, start-up splash ===== */
+html,body{overscroll-behavior-y:contain}
+.page,.sheet,.mod,.crash{overscroll-behavior:contain}
+.boot{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#fff}
+.boot b{font-size:20px;letter-spacing:.3px}.boot span{color:#9fb0d6;animation:fadeIn 1s ease infinite alternate}

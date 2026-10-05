@@ -1,11 +1,18 @@
 // Service worker: the app shell works offline.
 // Bump VERSION on every release so installed copies pick up the update.
-const VERSION = 'sc-v5';
-const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/sync.js', 'js/firebase-config.js',
-  'js/vendor/xlsx.full.min.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+const VERSION = 'sc-v7';
+// Without these the app cannot start, so a failed download aborts the install and the old copy keeps working.
+const REQUIRED = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/sync.js', 'manifest.webmanifest'];
+// Nice to have offline; a missing one must not break the install.
+const OPTIONAL = ['js/firebase-config.js', 'js/vendor/xlsx.full.min.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
+// Fetch around the browser's own HTTP cache (GitHub Pages keeps files for 10 minutes), so a release is never half old, half new.
+const fresh = u => new Request(u, { cache: 'reload' });
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(async c => {
+    await Promise.all(REQUIRED.map(u => c.add(fresh(u))));
+    await Promise.all(OPTIONAL.map(u => c.add(fresh(u)).catch(() => {})));
+  }).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -16,19 +23,33 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Stale-while-revalidate for our own files and the Firebase SDK modules.
-// Firestore / Auth API traffic is never cached.
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+const clean = res => res && res.ok && res.type !== 'opaque' && !res.redirected;
+
 self.addEventListener('fetch', e => {
   const r = e.request, u = new URL(r.url);
   if (r.method !== 'GET') return;
   const own = u.origin === location.origin;
   const sdk = u.hostname === 'www.gstatic.com' && u.pathname.startsWith('/firebasejs/');
   if (!own && !sdk) return;
+
+  // Opening the app: ask the network first (so a new release shows up straight away) and fall back to the
+  // saved copy when offline or slow. The page can therefore never be stuck on a broken saved copy.
+  if (r.mode === 'navigate') {
+    e.respondWith(
+      withTimeout(fetch(r), 4000)
+        .then(res => { if (clean(res)) { const copy = res.clone(); caches.open(VERSION).then(c => c.put('index.html', copy)); } return res; })
+        .catch(() => caches.match('index.html').then(h => h || caches.match('./')))
+    );
+    return;
+  }
+
+  // Everything else: show the saved copy instantly and refresh it in the background.
   e.respondWith(caches.match(r).then(hit => {
     const net = fetch(r).then(res => {
-      if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(r, copy)); }
+      if (clean(res)) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(r, copy)); }
       return res;
-    }).catch(() => hit || caches.match('index.html'));
+    }).catch(() => hit);
     return hit || net;
   }));
 });
