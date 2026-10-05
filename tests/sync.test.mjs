@@ -76,7 +76,7 @@ const appSrc = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8').replace('re
 async function device(name, preset) {
   const idb = preset || makeIdb(), ls = makeLs();
   globalThis.indexedDB = idb; globalThis.localStorage = ls;
-  const app = new Function(appSrc + `;return {kind,fullLv,TYPES,S,work,leaves:()=>leaves,setLeaves:v=>{leaves=v},R,base,pS,xS,pL,pM,pB,O,ready,holidays:()=>holidays,setHolidays:v=>{holidays=v},swapLog:()=>swapLog,setSwaps:v=>{swapLog=v},pH,xH,pW,xW,holState,toilEarned,rem,setToday:v=>{TODAY=v},evList,armNotifs,icsText,NS,getTimers:()=>timers,csv,tplCsv,tplWorkbook,build,getImp:()=>imp}`)();
+  const app = new Function(appSrc + `;return {kind,fullLv,getTypes:()=>TYPES,setTypes:v=>{TYPES=v},pT,monthStats,limitStats,takenYear,toilMonth,S,work,leaves:()=>leaves,setLeaves:v=>{leaves=v},R,base,pS,xS,pL,pM,pB,O,ready,holidays:()=>holidays,setHolidays:v=>{holidays=v},swapLog:()=>swapLog,setSwaps:v=>{swapLog=v},pH,xH,pW,xW,holState,toilEarned,rem,setToday:v=>{TODAY=v},evList,armNotifs,icsText,NS,getTimers:()=>timers,csv,tplCsv,tplWorkbook,build,getImp:()=>imp}`)();
   await app.ready;
   win.redraw = () => {};
   const dev = { name, idb, ls, app, api: win.syncApi };
@@ -256,6 +256,30 @@ assert.deepEqual([40, 41, 42, 43, 44].map(i => kx.kind(O + i)), ['E', 'L', 'C', 
 ok('shift letters: 08:50-16:38 is E, 09:22-17:10 is L, other times C, partial leave C, no shift blank; a denied partial does not make C');
 kx.setLeaves([{ id: 'f', d: O + 44, type: 'Sick', full: true, st: 'Denied' }, { id: 'g', d: O + 45, type: 'PTO', full: true, st: 'Review' }]);
 assert.ok(!kx.fullLv(O + 44) && kx.fullLv(O + 45)); ok('a denied full-day request is not a leave day, an under-review one is');
+// 10. custom shift types: persist, sync, calendar letters
+A.use(); A.app.setTypes([{ id: 'E', n: 'Early', l: 'E', s: '08:50', e: '16:38', c: '#3987e5' }, { id: 'n1', n: 'Night', l: 'N', s: '21:00', e: '05:30', c: '#d95926' }, { id: 'l24', n: '24h', l: 'H', s: '07:00', e: '19:00', c: '#199e70' }]); A.app.pT();
+await A.run(); await B.run();
+assert.deepEqual(B.app.getTypes().map(x => x.l), ['E', 'N', 'H']); assert.equal(B.app.getTypes()[1].c, '#d95926');
+ok('custom shift types (name, letter, hours, colour) sync to another device');
+const Tm2 = await device('TYPES2'); const tx = Tm2.app; Tm2.use();
+tx.setTypes([{ id: 'x', n: 'Mid', l: 'M', s: '10:00', e: '18:00', c: '#199e70' }]);
+tx.S[O + 50] = { s: '10:00', e: '18:00', st: 'Scheduled', f: '' }; tx.S[O + 51] = { s: '08:50', e: '16:38', st: 'Scheduled', f: '' };
+assert.deepEqual([50, 51].map(i => tx.kind(O + i)), ['M', 'C']); ok('calendar letter follows the custom type; the old Early hours become C once that type is removed');
+
+// 11. statistics maths
+const Sm = await device('STATS'); const sx = Sm.app; Sm.use(); sx.setToday(O + 8);
+for (let i = 5; i <= 10; i++) sx.S[sx.O + i] = { s: '08:50', e: '16:38', st: 'Scheduled', f: '' }, sx.work.push(sx.O + i);
+sx.setLeaves([{ id: 1, d: O + 6, type: 'PTO', full: false, s: '15:00', e: '16:00', st: 'Approved' }]);
+let ms = sx.monthStats(2026, 9); assert.deepEqual([ms.mins, ms.n, ms.done], [6 * 468 - 60, 6, 4 * 468 - 60]);
+ok('hours per month: shift minutes minus partial leave, and "worked so far" stops at today');
+let ls = sx.limitStats(2026, 9); assert.deepEqual([ls.six, ls.maxWk, ls.best], [1, 6, 6]);
+sx.work.push(sx.O + 11); sx.S[sx.O + 11] = { s: '08:50', e: '16:38', st: 'Scheduled', f: '' };
+ls = sx.limitStats(2026, 9); assert.deepEqual([ls.six, ls.best], [1, 7]); ok('limits: six-day weeks counted by Saturday, longest run found across week edges');
+sx.setLeaves([{ id: 2, d: O + 7, type: 'PTO', full: true, st: 'Approved' }, { id: 3, d: O + 9, type: 'Sick', full: true, st: 'Review' }]);
+ms = sx.monthStats(2026, 9); ls = sx.limitStats(2026, 9);
+assert.equal(ms.n, 6); assert.equal(sx.takenYear('PTO', 2026), 468); assert.equal(sx.takenYear('Sick', 2026), 0);
+assert.equal(ls.six, 0); ok('approved full-day leave removes a day from hours and limits; under-review leave does not; taken-this-year counts approved only');
+
 console.log('\nAll ' + n + ' sync checks passed.');
 fs.rmSync(tmp, { recursive: true, force: true });
 process.exit(0);

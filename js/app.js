@@ -10,9 +10,12 @@ const wd=[1,2,4,5,6,8,9,11,12,13,15,16,18,19,20,22,23,25,26,27,29,30],work=wd.ma
 const S={};wd.forEach(d=>S[O+d]={s:d%3==0?'09:22':'08:50',e:d%3==0?'17:10':'16:38',st:'Scheduled',f:''});
 S[O+12].st='Planned';S[O+16].st='Approved';S[O+16].f='Swapped';
 const R={week:6,cons:6,sixPerMonth:2,commute:45};
-const TYPES={E:{n:'Early',s:'08:50',e:'16:38'},L:{n:'Late',s:'09:22',e:'17:10'}};
+const TYPE_COLORS=['#3987e5','#9085e9','#199e70','#d95926','#e87ba4','#c98500','#e66767','#008300'],CUSTOM_C='#e9a23b';
+const defTypes=()=>[{id:'E',n:'Early',l:'E',s:'08:50',e:'16:38',c:TYPE_COLORS[0]},{id:'L',n:'Late',l:'L',s:'09:22',e:'17:10',c:TYPE_COLORS[1]}];
+let TYPES=defTypes();
+const typeOf=d=>{const s=S[d];return s&&TYPES.find(x=>x.s==s.s&&x.e==s.e)||null};
 const partial=d=>leaves.some(l=>l.d==d&&!l.full&&l.st!='Denied');
-const kind=d=>{const s=S[d];if(!s)return '';if(partial(d))return 'C';for(const k in TYPES)if(TYPES[k].s==s.s&&TYPES[k].e==s.e)return k;return 'C'};
+const kind=d=>{const s=S[d];if(!s)return '';if(partial(d))return 'C';const x=typeOf(d);return x?x.l:'C'};
 const fullLv=d=>leaves.find(l=>l.d==d&&l.full&&l.st!='Denied');
 const DEMO_BASE={PTO:36*60+12,TOIL:11*60+30,Sick:5*468},base={PTO:0,TOIL:0,Sick:0};
 const hm=t=>{const[a,b]=String(t).split(':').map(Number);return a*60+b};
@@ -53,19 +56,20 @@ function check(d,skip){ // would working day d break rules? (skip = a day being 
 const ic=p=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const icons=[ic('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'),ic('<path d="M7 7h12l-3-3M17 17H5l3 3"/>'),ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),ic('<path d="M4 6h10M4 12h16M4 18h8"/><circle cx="17" cy="6" r="2"/>')];
 const names=['Schedule','Swaps','Leave','Rules'];
+function tapDay(d){try{navigator.vibrate&&navigator.vibrate(6)}catch(e){}sel=d;col=false;draw()}
 function cal(){const big=col;let h='<div class="grid'+(big?' big':'')+'">'+DOW.map(x=>`<div class="h">${x}</div>`).join('');
   const f1=E(vm.y,vm.m,1),nd=new Date(Date.UTC(vm.y,vm.m+1,0)).getUTCDate();
   for(let i=0;i<dow(f1);i++)h+='<div></div>';
   for(let k=1;k<=nd;k++){const d=f1+k-1,s=S[d];const c=s?({Scheduled:'#5b9bff',Planned:'#7c6cf0',Review:'#d95f18',Approved:'#1fb67a',Denied:'#e5484d'})[s.st]:'';
-    const fl=fullLv(d);let cls='',tag='';
+    const fl=fullLv(d);let cls='',tag='',sty='';
     if(big){if(fl){cls=fl.st=='Approved'?'lva':'lvr';tag=`<em class="tg">${fl.type=='Sick'?'SICK':fl.type}</em>`}
       else if(!s){cls='offd';tag='<em class="tg">OFF</em>'}
-      else{const q=kind(d);cls='k'+q;tag=`<em class="tg lt">${q}</em>`}}
-    h+=`<div class="d ${cls} ${d==sel?'sel':''} ${d==TODAY?'today':''} ${hol(d)?'bh':''}" onclick="sel=${d};col=false;draw()"><b>${k}</b>${big?tag:''}${swapLog.some(w=>w.give==d||w.take==d)?'<i class="sw"></i>':''}${leaves.some(l=>l.d==d)&&!(big&&fl)?'<i class="lv"></i>':''}${s&&!(big&&!fl)?`<i style="background:${c}"></i>`:''}</div>`}
+      else{const q=kind(d),x=q=='C'?null:typeOf(d);cls=x?'kt':'kC';if(x)sty=`style="background:${x.c}33"`;tag=`<em class="tg lt">${esc(q)}</em>`}}
+    h+=`<div class="d ${cls} ${d==sel?'sel':''} ${d==TODAY?'today':''} ${hol(d)?'bh':''}" ${sty} onclick="tapDay(${d})"><b>${k}</b>${big?tag:''}${swapLog.some(w=>w.give==d||w.take==d)?'<i class="sw"></i>':''}${leaves.some(l=>l.d==d)&&!(big&&fl)?'<i class="lv"></i>':''}${s&&!(big&&!fl)?`<i style="background:${c}"></i>`:''}</div>`}
   h+='</div>';
-  if(big)h+='<div class="lg"><span><u class="kE">E</u>Early 08:50</span><span><u class="kL">L</u>Late 09:22</span><span><u class="kC">C</u>Custom / partial</span><span><u class="offd">OFF</u>Day off</span><span><u class="lva"></u>Leave</span><span><u class="lvr"></u>Pending</span></div>';
+  if(big)h+='<div class="lg">'+TYPES.map(x=>`<span><u style="background:${x.c}">${esc(x.l)}</u>${esc(x.n)}</span>`).join('')+`<span><u style="background:${CUSTOM_C}">C</u>Custom / partial</span><span><u class="offd">OFF</u>Day off</span><span><u class="lva"></u>Leave</span><span><u class="lvr"></u>Pending</span></div>`;
   return h}
-function sched(){const s=S[sel];let h=`<div class="top"><div class="bar"><span>‹</span><span>Schedule</span><span onclick="openImp()" style="cursor:pointer;font-size:12px;border:1px solid #5b6f9e;border-radius:12px;padding:3px 10px">Import</span></div><div class="sub row" style="font-size:15px"><span onclick="mv(-1)" style="cursor:pointer;padding:4px 14px">‹</span><b onclick="goto(TODAY);draw()" style="cursor:pointer">${MON[vm.m]} ${vm.y}</b><span onclick="mv(1)" style="cursor:pointer;padding:4px 14px">›</span></div>${cal()}</div><div class="sheet" id="sh"><div class="grab" id="gr"></div><h2>${DAYN[dow(sel)]}, ${fd(sel)}</h2>`;
+function sched(){const s=S[sel];let h=`<div class="top"><div class="bar"><span onclick="openStats()" style="cursor:pointer;font-size:12px;border:1px solid #5b6f9e;border-radius:12px;padding:3px 10px">Stats</span><span>Schedule</span><span onclick="openImp()" style="cursor:pointer;font-size:12px;border:1px solid #5b6f9e;border-radius:12px;padding:3px 10px">Import</span></div><div class="sub row" style="font-size:15px"><span onclick="mv(-1)" style="cursor:pointer;padding:4px 14px">‹</span><b onclick="goto(TODAY);draw()" style="cursor:pointer">${MON[vm.m]} ${vm.y}</b><span onclick="mv(1)" style="cursor:pointer;padding:4px 14px">›</span></div>${cal()}</div><div class="sheet" id="sh"><div class="grab" id="gr"></div><h2>${DAYN[dow(sel)]}, ${fd(sel)}</h2>`;
   if(!s)h+='<div class="card"><div class="t">Day off</div><div class="m">Standard day = 7h 48m. Tap + to add a shift.</div></div>';
   else{const[hh,mm]=s.s.split(':').map(Number);const l=hh*60+mm-R.commute;
     h+=`<div class="card"><div class="row"><div class="t">${s.s} – ${s.e}</div><span class="pill st-${s.st}">${lab[s.st]||s.st}</span></div><div class="m">Sun–Sat week · ${DOW[dow(sel)]}</div>
@@ -103,7 +107,7 @@ function saveL(){const f=fv('l-f')=='1',d=fromIso(fv('l-d')),a=fv('l-a'),b=fv('l
   if(st!='Denied'&&f&&hol(d)&&S[d])msgs.push(`${hol(d).name} is a bank holiday you are scheduled to work. A full-day ${t} request means no TOIL day.`);
   if(msgs.length&&!warn){warn=true;document.getElementById('sv').textContent='Submit anyway';return wn('⚠ '+msgs.join(' '))}
   const rec={id:lvId||newId(),d,type:t,full:f,s:f?null:a,e:f?null:b,st};
-  if(lvId)leaves[leaves.findIndex(x=>x.id==lvId)]=rec;else leaves.push(rec);pL(rec);goto(d);col=false;closeM()}
+  if(lvId)leaves[leaves.findIndex(x=>x.id==lvId)]=rec;else leaves.push(rec);pL(rec);goto(d);col=false;showOk('Leave saved');closeM()}
 function delL(){const b=document.getElementById('dl');if(!dl){dl=true;b.textContent='Tap again to confirm delete';return}xL(lvId);leaves=leaves.filter(x=>x.id!=lvId);closeM()}
 function leaveHTML(){const l=lvId?leaves.find(x=>x.id==lvId):null,d=l?l.d:sel,sh=S[d],x=l||{type:'PTO',full:true,s:sh?sh.s:'09:00',e:sh?sh.e:'11:00',st:'Review'};
   const o=(arr,v)=>arr.map(a=>`<option value="${a[0]}" ${a[0]==v?'selected':''}>${a[1]}</option>`).join('');
@@ -134,7 +138,9 @@ async function pushSheet(){const u=fv('sh-u').trim(),k=fv('sh-k').trim(),m=docum
   catch(e){m.className='bad m';m.textContent='Could not confirm. Check you are online, the URL is right, and the deployment allows “Anyone”.'}}
 function rules(){const st=(k,l,min,max)=>`<div class="card row"><div class="t">${l}</div><div class="step"><button onclick="R.${k}=Math.max(${min},R.${k}-${k=='commute'?5:1});pM();draw()">−</button><b>${R[k]}${k=='commute'?' min':''}</b><button onclick="R.${k}=Math.min(${max},R.${k}+${k=='commute'?5:1});pM();draw()">+</button></div></div>`;
   return `<div class="dark"><div class="bar"><span></span><span>Rules & Settings</span><span></span></div><div class="sub">Week runs Sunday → Saturday</div></div><div class="page">
-  <h2>Limits</h2><div class="m" style="margin-bottom:8px">Approved full-day leave doesn't count as a workday. Partial leave still does. A week counts toward the month it ends in (Saturday).</div>${st('week','Max workdays / week',1,7)}${st('cons','Max consecutive days',1,14)}${st('sixPerMonth','6-day weeks / month',0,5)}
+  <button class="btn" style="margin:0 0 6px" onclick="openStats()">Statistics &amp; charts</button>
+  <h2 style="margin-top:14px">Shift types</h2><div class="m" style="margin-bottom:8px">Your usual shifts. The calendar shows each one's letter and colour; any other hours, or a shift with partial leave, shows C.</div>${TYPES.map((x,i)=>`<div class="card row" onclick="openTy(${i})" style="cursor:pointer"><div class="trow"><u class="tdot" style="background:${x.c}">${esc(x.l)}</u><div><div class="t">${esc(x.n)}</div><div class="m">${x.s}–${x.e}</div></div></div><span class="m">Edit</span></div>`).join('')}<button class="btn" onclick="openTy(null)">Add shift type</button>
+  <h2 style="margin-top:14px">Limits</h2><div class="m" style="margin-bottom:8px">Approved full-day leave doesn't count as a workday. Partial leave still does. A week counts toward the month it ends in (Saturday).</div>${st('week','Max workdays / week',1,7)}${st('cons','Max consecutive days',1,14)}${st('sixPerMonth','6-day weeks / month',0,5)}
   <h2>Commute</h2>${st('commute','Travel time to work',5,180)}<div class="m">Used for the “Leave by” reminder on each shift.</div>
   <h2 style="margin-top:14px">Reminders</h2>${notifCard()}${calCard()}
   <h2 style="margin-top:14px">Bank holidays</h2><div class="m" style="margin-bottom:8px">Scheduled to work a bank holiday? You earn 1 TOIL day (7h 48m) once the day arrives. Take a full day of leave (PTO, TOIL or sick) on it and you earn none; partial leave does not count. Add the dates for your region.</div>${[...holidays].sort((a,b)=>a.d-b.d).map(h=>holRow(h,true)).join('')||'<div class="m">No bank holidays added yet.</div>'}
@@ -142,17 +148,101 @@ function rules(){const st=(k,l,min,max)=>`<div class="card row"><div class="t">$
   <h2 style="margin-top:14px">Opening balances</h2><div class="m" style="margin-bottom:8px">Hours:minutes you had before using this app (e.g. 36:12). Approved leave is deducted from these. TOIL earned on the bank holidays below is added automatically, so leave it out of the TOIL figure.</div>${['PTO','TOIL','Sick'].map(k=>`<div class="card row"><div class="t">${k}</div><input style="width:110px;text-align:right" value="${Math.floor(base[k]/60)}:${pad(base[k]%60)}" onchange="setBal('${k}',this.value)"></div>`).join('')}
   <h2 style="margin-top:14px">Sync</h2><div class="card"><div class="t">${dbOk?'● Saved on this device':'⚠ Not saved: storage unavailable'}</div><div class="m">${dbOk?'Every change is written to this device straight away and works offline.':'This browser is blocking local storage, so changes will be lost when the page reloads.'}</div></div>${syncCard()}
   <h2 style="margin-top:14px">Google Sheets</h2>${sheetsCard()}<h2 style="margin-top:14px">Data</h2><button class="btn" onclick="modal='exp';draw()">Export for payroll (Google Sheets)</button><button class="btn" style="background:#8a97b8" onclick="demo()">Load demo data</button><button class="btn" id="clr" style="background:var(--red)" onclick="clr()">Clear all data</button></div>`}
+// ---------- shift type editor ----------
+let tyId=null,tyC=TYPE_COLORS[2],tyDel=false;
+function openTy(i){tyId=i;tyDel=false;tyC=i==null?(TYPE_COLORS.find(c=>!TYPES.some(x=>x.c==c))||TYPE_COLORS[0]):TYPES[i].c;modal='ty';draw()}
+function pickC(c){tyC=c;document.querySelectorAll('.sw8 button').forEach(b=>b.classList.toggle('on',b.dataset.c==c))}
+function tyHTML(){const x=tyId==null?{n:'',l:'',s:'08:00',e:'16:00'}:TYPES[tyId];
+  return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${tyId==null?'New shift type':'Edit shift type'}</h2>
+  <div class="two"><div class="f"><label>Name</label><input id="t-n" maxlength="16" value="${esc(x.n)}" placeholder="Night shift"></div><div class="f"><label>Letter</label><input id="t-l" maxlength="2" value="${esc(x.l)}" placeholder="N" style="text-transform:uppercase"></div>
+  <div class="f"><label>Start</label><input id="t-a" type="time" value="${x.s}"></div><div class="f"><label>End</label><input id="t-b" type="time" value="${x.e}"></div></div>
+  <div class="f"><label>Colour</label><div class="sw8">${TYPE_COLORS.map(c=>`<button type="button" data-c="${c}" aria-label="${c}" class="${c==tyC?'on':''}" style="background:${c}" onclick="pickC('${c}')"></button>`).join('')}</div></div>
+  <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" onclick="saveTy()">Save</button>${tyId!=null?'<button class="btn" id="tdl" style="background:var(--red)" onclick="delTy()">Delete shift type</button>':''}</div></div>`}
+function saveTy(){const n=fv('t-n').trim(),l=(fv('t-l').trim()||n.slice(0,1)).toUpperCase().slice(0,2),a=fv('t-a'),b=fv('t-b');
+  if(!n)return wn('Give the shift a name.');if(!l)return wn('Pick a letter.');if(l=='C')return wn('C is reserved for customized shifts.');
+  if(!a||!b||b<=a)return wn('Pick an end time after the start.');
+  if(TYPES.some((x,i)=>i!=tyId&&x.l==l))return wn('Letter '+l+' is used by another shift type.');
+  if(TYPES.some((x,i)=>i!=tyId&&x.s==a&&x.e==b))return wn('Another shift type already has these hours.');
+  const rec={id:tyId==null?'t'+Date.now().toString(36):TYPES[tyId].id,n,l,s:a,e:b,c:tyC};
+  if(tyId==null){if(TYPES.length>=8)return wn('Up to 8 shift types.');TYPES.push(rec)}else TYPES[tyId]=rec;
+  pT();showOk('Saved');closeM()}
+function delTy(){const b=document.getElementById('tdl');if(!tyDel){tyDel=true;b.textContent='Tap again to confirm. Shifts keep their times and show C.';return}TYPES.splice(tyId,1);pT();closeM()}
+
+// ---------- statistics ----------
+const SC={hrs:'#2a78d6',toil:'#1baf7a',pto:'#4a3aa7',Sick:'#eb6834'};
+let stY=_n.getFullYear(),stM=_n.getMonth(),stSel=_n.getMonth();
+const fh=m=>Math.floor(m/60)+'h '+pad(Math.round(m%60))+'m';
+function monthStats(y,m){const a=E(y,m,1),z=E(y,m+1,1)-1,types={};let mins=0,done=0,n=0;
+  work.forEach(d=>{if(d<a||d>z)return;const s=S[d];if(!s||s.st=='Denied'||off(d))return;
+    let q=hm(s.e)-hm(s.s);leaves.forEach(l=>{if(l.d==d&&!l.full&&l.st!='Denied')q-=dur(l)});q=Math.max(0,q);
+    mins+=q;if(d<=TODAY)done+=q;n++;const k=kind(d);types[k]=(types[k]||0)+1});
+  return{mins,done,n,types}}
+function limitStats(y,m){const w=new Set(work.filter(x=>S[x].st!='Denied'&&!off(x))),a=E(y,m,1),z=E(y,m+1,1)-1;let six=0,maxWk=0,best=0,run=0,start=0;
+  for(let sat=a+((6-dow(a)+7)%7);sat<=z;sat+=7){let c=0;for(let i=0;i<7;i++)if(w.has(sat-i))c++;maxWk=Math.max(maxWk,c);if(c>=6)six++}
+  for(let d=a-14;d<=z+14;d++){if(w.has(d)){if(!run)start=d;run++;if(d>=a&&start<=z&&run>best)best=run}else run=0}
+  return{six,maxWk,best}}
+const takenYear=(k,y)=>leaves.filter(l=>l.type==k&&l.st=='Approved'&&UD(l.d).getUTCFullYear()==y).reduce((s,l)=>s+dur(l),0);
+const toilMonth=(y,m)=>holidays.filter(h=>holState(h)=='earned'&&UD(h.d).getUTCFullYear()==y&&UD(h.d).getUTCMonth()==m).length*TOIL_DAY;
+const niceStep=v=>{const r=(v||1)/3,p=10**Math.floor(Math.log10(r)),f=r/p;return(f<=1?1:f<=2?2:f<=5?5:10)*p};
+function barSvg(vals,lab,o){const W=330,H=164,L=34,T=24,B=22,n=vals.length,mx=Math.max(...vals,o.floor||1),step=niceStep(mx),top=Math.ceil(mx/step-1e-9)*step||step,ih=H-T-B,iw=W-L-4,bw=Math.min(18,iw/n-6);
+  let g='',b='',x='';
+  for(let q=0;q<=top+1e-9;q+=step){const y=T+ih-q/top*ih;g+=`<line x1="${L}" x2="${W-4}" y1="${y}" y2="${y}" class="gl"/><text x="${L-6}" y="${y+3}" class="ax" text-anchor="end">${Math.round(q*10)/10}</text>`}
+  vals.forEach((v,i)=>{const cx=L+(i+.5)*iw/n,h=v/top*ih,y=T+ih-h,r=Math.min(4,h/2);
+    if(v>0)b+=`<path d="M${cx-bw/2},${T+ih}V${y+r}a${r},${r} 0 0 1 ${r},-${r}h${bw-2*r}a${r},${r} 0 0 1 ${r},${r}V${T+ih}z" fill="${o.color}"/>`;
+    x+=`<text x="${cx}" y="${H-6}" class="ax${i==o.sel?' on':''}" text-anchor="middle">${lab[i]}</text>`;
+    if(i==o.sel&&v>0)x+=`<text x="${cx}" y="${y-6}" class="vl" text-anchor="middle">${o.fmt(v)}</text>`;
+    b+=`<rect x="${cx-iw/n/2}" y="${T-8}" width="${iw/n}" height="${ih+B+8}" fill="transparent" onclick="${o.pick}(${i})" style="cursor:pointer"/>`});
+  return `<svg viewBox="0 0 ${W} ${H}" class="bc" role="img" aria-label="${esc(o.aria)}">${g}${b}${x}</svg>`}
+function donutSvg(parts){const tot=parts.reduce((s,p)=>s+p.v,0),C=2*Math.PI*43;let acc=0,s='';
+  if(!tot)return '<div class="m">No shifts this year.</div>';
+  parts.filter(p=>p.v>0).forEach(p=>{const L=p.v/tot*C,len=Math.max(L-2,.01);s+=`<circle cx="60" cy="60" r="43" fill="none" stroke="${p.c}" stroke-width="18" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-acc}" transform="rotate(-90 60 60)"/>`;acc+=L});
+  return `<svg viewBox="0 0 120 120" class="dn" role="img" aria-label="Shift mix">${s}<text x="60" y="58" text-anchor="middle" class="dnv">${tot}</text><text x="60" y="72" text-anchor="middle" class="ax">shifts</text></svg>`}
+const limRow=(label,v,max,unit)=>{const r=max?v/max:(v?2:0),st=r>1?'bad':r==1?'warn':'ok',ico={bad:'✕',warn:'!',ok:'✓'}[st],txt={bad:'Over limit',warn:'At limit',ok:'Within limit'}[st];
+  return `<div class="lim"><div class="row"><span class="t">${label}</span><span class="lst ${st}">${ico} ${txt}</span></div><div class="meter"><i class="${st}" style="transform:scaleX(${Math.min(1,r)})"></i></div><div class="m">${v} of ${max} ${unit}</div></div>`};
+function openStats(){stY=vm.y;stM=vm.m;stSel=vm.m;modal='stats';draw()}
+function keepDraw(){const m=document.getElementById('md'),q=m&&m.scrollTop;draw();const n=document.getElementById('md');if(n&&q)n.scrollTop=q}
+function stYear(k){stY+=k;stSel=stY==_n.getFullYear()?_n.getMonth():0;keepDraw()}
+function stPick(i){stSel=i;keepDraw()}
+function stMon(k){let m=stM+k,y=stY;if(m<0){m=11;y--}if(m>11){m=0;y++}stM=m;if(y!=stY){stY=y;stSel=y==_n.getFullYear()?_n.getMonth():0}keepDraw()}
+function statsHTML(){const MS=[...Array(12)].map((_,m)=>monthStats(stY,m)),yr=MS.reduce((s,x)=>({mins:s.mins+x.mins,done:s.done+x.done,n:s.n+x.n}),{mins:0,done:0,n:0}),sel=MS[stSel],ML=MON.map(x=>x[0]);
+  const mix={};MS.forEach(x=>Object.keys(x.types).forEach(k=>mix[k]=(mix[k]||0)+x.types[k]));
+  const parts=[...TYPES.map(x=>({v:mix[x.l]||0,c:x.c,l:x.n+' ('+x.l+')'})),{v:mix.C||0,c:CUSTOM_C,l:'Custom (C)'}];
+  const toilM=[...Array(12)].map((_,m)=>toilMonth(stY,m)),ls=limitStats(stY,stM);
+  const tile=(l,v,c)=>`<div class="tile"><small>${l}</small><b style="color:${c||'inherit'}">${v}</b></div>`;
+  const lrow=k=>{const tk=takenYear(k,stY),left=Math.max(0,rem(k)),tot=tk+left,c=k=='PTO'?SC.pto:k=='TOIL'?SC.toil:SC.Sick;
+    return `<div class="lim"><div class="row"><span class="t">${k}</span><span class="m">${fh(tk)} taken · ${fh(left)} left</span></div><div class="meter"><i style="background:${c};transform:scaleX(${tot?tk/tot:0})"></i></div></div>`};
+  return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod full" id="md"><div class="grab" id="mg"></div>
+  <div class="row"><h2 style="margin:0">Statistics</h2><button class="xbtn" aria-label="Close" onclick="closeM()">✕</button></div>
+  <div class="yr"><button onclick="stYear(-1)" aria-label="Previous year">‹</button><b>${stY}</b><button onclick="stYear(1)" aria-label="Next year">›</button></div>
+  <div class="tiles">${tile('Scheduled',fh(yr.mins),SC.hrs)}${tile('Worked so far',fh(yr.done))}${tile('Shifts',yr.n)}</div>
+  <h3>Hours per month</h3><div class="m">Scheduled hours, minus partial leave and approved full-day leave. Tap a bar.</div>
+  ${barSvg(MS.map(x=>x.mins/60),ML,{color:SC.hrs,sel:stSel,pick:'stPick',floor:10,fmt:v=>Math.round(v*10)/10+'h',aria:'Scheduled hours per month in '+stY})}
+  <div class="readout" aria-live="polite">${MON[stSel]} ${stY} · <b>${fh(sel.mins)}</b> scheduled · ${sel.n} shifts · ${fh(sel.done)} worked so far</div>
+  <h3>Shift mix in ${stY}</h3><div class="mix">${donutSvg(parts)}<div class="mixl">${parts.filter(p=>p.v>0).map(p=>`<div><u style="background:${p.c}"></u>${esc(p.l)}<b>${p.v}</b></div>`).join('')||''}</div></div>
+  <h3>TOIL</h3><div class="tiles">${tile('Balance now',fh(Math.max(0,rem('TOIL'))),SC.toil)}${tile('Earned in '+stY,fh(toilM.reduce((a,b)=>a+b,0)))}${tile('Taken in '+stY,fh(takenYear('TOIL',stY)))}</div>
+  <div class="m">Hours earned on bank holidays you worked, per month.</div>
+  ${toilM.some(x=>x)?barSvg(toilM.map(x=>x/60),ML,{color:SC.toil,sel:-1,pick:'stPick',floor:8,fmt:v=>Math.round(v*10)/10+'h',aria:'TOIL hours earned per month in '+stY}):'<div class="readout">No TOIL earned in '+stY+' yet.</div>'}
+  <h3>Leave taken in ${stY}</h3>${['PTO','TOIL','Sick'].map(lrow).join('')}
+  <h3>Statutory limits</h3><div class="yr"><button onclick="stMon(-1)" aria-label="Previous month">‹</button><b>${MON[stM]} ${stY}</b><button onclick="stMon(1)" aria-label="Next month">›</button></div>
+  ${limRow('Six-day weeks',ls.six,R.sixPerMonth,'allowed this month')}${limRow('Busiest week',ls.maxWk,R.week,'workdays allowed per week')}${limRow('Longest run',ls.best,R.cons,'days in a row allowed')}
+  <details class="tbl"><summary>View data as a table</summary><table><tr><th>Month</th><th>Hours</th><th>Shifts</th><th>TOIL</th></tr>${MS.map((x,m)=>`<tr><td>${MON[m]}</td><td>${fh(x.mins)}</td><td>${x.n}</td><td>${toilM[m]?fh(toilM[m]):'–'}</td></tr>`).join('')}</table></details>
+  </div></div>`}
+
+// ---------- success tick ----------
+function showOk(msg){try{const o=document.getElementById('okp');if(o)o.remove();const el=document.createElement('div');el.id='okp';el.className='okp';el.setAttribute('role','status');
+  el.innerHTML='<svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="23"/><path d="M15 27l8 8 15-17"/></svg><span></span>';el.lastChild.textContent=msg||'Done';document.body.appendChild(el);setTimeout(()=>el.remove(),1600)}catch(e){}}
+
 function drag(h,el,o){let y0=null,b=0,cur=0;
   h.onpointerdown=e=>{y0=e.clientY;b=o.base();cur=b;h.setPointerCapture(e.pointerId);el.style.transition='none'};
   h.onpointermove=e=>{if(y0==null)return;cur=Math.min(o.max(),Math.max(0,b+e.clientY-y0));el.style.transform=`translateY(${cur}px)`};
-  h.onpointerup=e=>{if(y0==null)return;const mv=Math.abs(e.clientY-y0);y0=null;el.style.transition='transform .25s ease';o.end(cur-b,mv,cur)}}
+  h.onpointerup=e=>{if(y0==null)return;const mv=Math.abs(e.clientY-y0);y0=null;el.style.transition='transform .45s cubic-bezier(.34,1.5,.64,1)';o.end(cur-b,mv,cur)}}
 function wire(){const sh=document.getElementById('sh');
   if(sh){const off=()=>sh.offsetHeight-124,pos=()=>sh.style.transform=col?`translateY(${off()}px)`:'translateY(0)';
     sh.style.transition='none';pos();
     drag(document.getElementById('gr'),sh,{base:()=>col?off():0,max:off,end:(dy,mv)=>{const o=col;col=mv<4?!col:col?!(dy<-60):dy>60;if(o!=col)draw();else pos()}})}
   const md=document.getElementById('md');
   if(md)drag(document.getElementById('mg'),md,{base:()=>0,max:()=>md.offsetHeight,end:(dy,mv,cur)=>cur>110?closeM():md.style.transform='translateY(0)'})}
-function closeM(){const md=document.getElementById('md');if(md)md.style.transform='translateY(100%)';setTimeout(()=>{modal=false;warn=false;editing=null;dl=false;imp=null;impDone='';lvId=null;swId=null;bhId=null;draw()},220)}
+function closeM(){const md=document.getElementById('md'),ov=md&&md.parentNode,fb=document.querySelector('.fab');if(fb)fb.classList.remove('x');if(md){md.style.transition='transform .3s cubic-bezier(.6,-.28,.735,.045)';md.style.transform='translateY(100%)'}if(ov){ov.style.transition='opacity .3s ease';ov.style.opacity='0'}setTimeout(()=>{modal=false;warn=false;editing=null;dl=false;imp=null;impDone='';lvId=null;swId=null;bhId=null;tyId=null;draw()},300)}
 const fv=i=>document.getElementById(i).value,wn=t=>{document.getElementById('wn').textContent=t};
 function save(){const ed=editing,d=ed||fromIso(fv('f-d')),a=fv('f-a'),b=fv('f-b');
   if(isNaN(d)||!a||!b||b<=a)return wn('Pick a date and an end time after the start.');
@@ -160,17 +250,19 @@ function save(){const ed=editing,d=ed||fromIso(fv('f-d')),a=fv('f-a'),b=fv('f-b'
   const e=ed?[]:check(d).concat(off(d)?['You have approved full-day leave on this day']:[]);
   if(e.length&&!warn){warn=true;document.getElementById('sv').textContent='Save anyway';return wn('⚠ '+e.join(' · '))}
   if(!ed){work.push(d);work.sort((x,y)=>x-y)}
-  S[d]={...(S[d]||{f:''}),s:a,e:b,st:fv('f-s')};pS(d);goto(d);col=false;closeM()}
+  S[d]={...(S[d]||{f:''}),s:a,e:b,st:fv('f-s')};pS(d);goto(d);col=false;showOk('Shift saved');closeM()}
 function delShift(){const b=document.getElementById('dl');
   if(!dl){dl=true;b.textContent='Tap again to confirm delete';return}
   xS(editing);delete S[editing];work.splice(work.indexOf(editing),1);closeM()}
-function qp(k){document.getElementById('f-a').value=TYPES[k].s;document.getElementById('f-b').value=TYPES[k].e}
-function modalHTML(){const ed=editing,x=ed?S[ed]:{s:TYPES.E.s,e:TYPES.E.e,st:'Scheduled',p:0},dv=ed||sel;
+const typeNow=(s,e)=>TYPES.find(x=>x.s==s&&x.e==e);
+function syncQp(){const a=document.getElementById('f-a'),b=document.getElementById('f-b');if(!a||!b)return;const c=typeNow(a.value,b.value);document.querySelectorAll('#qp button').forEach(x=>x.classList.toggle('on',!!c&&x.dataset.id==c.id))}
+function qp(id){const x=TYPES.find(y=>y.id==id);if(!x)return;document.getElementById('f-a').value=x.s;document.getElementById('f-b').value=x.e;syncQp()}
+function modalHTML(){const ed=editing,d0=TYPES[0]||{s:'08:00',e:'16:00'},x=ed?S[ed]:{s:d0.s,e:d0.e,st:'Scheduled',p:0},dv=ed||sel,cur=typeNow(x.s,x.e);
   const opts=[['Scheduled','Scheduled'],['Planned','Planned'],['Review','Under Review'],['Approved','Approved']].map(o=>`<option value="${o[0]}" ${o[0]==x.st?'selected':''}>${o[1]}</option>`).join('');
-  return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${ed?'Edit shift · '+fd(ed):'Add shift'}</h2>
-  <div class="qp"><button type="button" onclick="qp('E')">E · Early ${TYPES.E.s}-${TYPES.E.e}</button><button type="button" onclick="qp('L')">L · Late ${TYPES.L.s}-${TYPES.L.e}</button></div><div class="two"><div class="f"><label>Date</label><input id="f-d" type="date" value="${iso(dv)}" ${ed?'disabled':''}></div>
+  return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod pad" id="md"><div class="grab" id="mg"></div><h2>${ed?'Edit shift · '+fd(ed):'Add shift'}</h2>
+  <div class="qp" id="qp">${TYPES.map(y=>`<button type="button" data-id="${y.id}" class="${cur&&cur.id==y.id?'on':''}" style="--c:${y.c}" onclick="qp('${y.id}')">${esc(y.l)} · ${esc(y.n)}<small>${y.s}–${y.e}</small></button>`).join('')}</div><div class="two"><div class="f"><label>Date</label><input id="f-d" type="date" value="${iso(dv)}" ${ed?'disabled':''}></div>
   <div class="f"><label>Status</label><select id="f-s">${opts}</select></div>
-  <div class="f"><label>Start</label><input id="f-a" type="time" value="${x.s}"></div><div class="f"><label>End</label><input id="f-b" type="time" value="${x.e}"></div></div>
+  <div class="f"><label>Start</label><input id="f-a" type="time" value="${x.s}" oninput="syncQp()"></div><div class="f"><label>End</label><input id="f-b" type="time" value="${x.e}" oninput="syncQp()"></div></div>
   <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" id="sv" onclick="save()">${ed?'Save changes':'Save shift'}</button>${ed?'<button class="btn" id="dl" style="background:var(--red)" onclick="delShift()">Delete shift</button>':''}</div></div>`}
 const EX='Date,Start Time,End Time,Status\n2026-10-03,08:50,16:38,Scheduled\n2026-10-07,09:22,17:10,Planned\n2026-10-05,08:50,16:38,Scheduled\n2026-11-02,08:50,16:38,Scheduled';
 const SM={scheduled:'Scheduled',planned:'Planned',review:'Review',underreview:'Review',approved:'Approved',completed:'Approved'};
@@ -196,7 +288,7 @@ const cnt=()=>imp.filter(r=>!r.err&&(r.kind=='new'||r.act=='replace')).length;
 function ub(){const n=cnt(),b=document.getElementById('ib');b.textContent=`Import ${n} shift${n==1?'':'s'}`;b.disabled=!n}
 function doImport(){let a=0,rp=0;imp.forEach(r=>{if(r.err||(r.kind=='conflict'&&r.act!='replace'))return;if(r.kind=='new'){work.push(r.d);a++}else rp++;S[r.d]={...(S[r.d]||{f:''}),s:tm(r.s),e:tm(r.e),st:r.st};pS(r.d)});work.sort((x,y)=>x-y);
   const bad=work.filter(x=>S[x].st!='Denied'&&!off(x)&&check(x).length);
-  impDone=`Added ${a}, replaced ${rp}. `+(bad.length?`⚠ These days break your limits: ${bad.map(fd).join(', ')}.`:'All days are within your limits.');imp=null;draw()}
+  impDone=`Added ${a}, replaced ${rp}. `+(bad.length?`⚠ These days break your limits: ${bad.map(fd).join(', ')}.`:'All days are within your limits.');imp=null;draw();showOk('Imported '+(a+rp))}
 // ---------- import template ----------
 const TPL_INFO=[['Shift Companion schedule template'],[],['Fill in the Schedule sheet (one row per shift), save the file, then import it from Schedule > Import.'],[],
   ['Date','YYYY-MM-DD or DD/MM/YYYY. A normal Excel date also works.'],['Start Time','24-hour time, e.g. 08:50'],['End Time','24-hour time, later than the start (shifts cannot cross midnight yet)'],
@@ -272,8 +364,10 @@ function saveBHM(){const lines=fv('bm-t').split(/\r?\n/).map(x=>x.trim()).filter
   for(let i=0;i<lines.length;i++){const l=lines[i],m=l.match(/^(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})[\s,;]*(.*)$/),dt=m&&pd(m[1]),d=dt&&UD(E(dt.y,dt.m-1,dt.d)).getUTCDate()==dt.d?E(dt.y,dt.m-1,dt.d):NaN;
     if(isNaN(d))return wn(`Line ${i+1} not understood: "${l.slice(0,40)}"`);recs.push({d,name:(m[2]||'').trim()||'Bank holiday'})}
   recs.forEach(r=>{holidays=holidays.filter(h=>h.d!=r.d);holidays.push(r);pH(r)});closeM()}
-function draw(){const v=[sched,swaps,leave,rules][tab]();
-  document.getElementById('app').innerHTML=v+`<button class="fab" onclick="openM(null)">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal?modalHTML():'');wire();if(modal=='lv')lu()}
+let pTab=null,pModal=false,pSel=null;
+function fxOf(){let f='';if(pTab!==null){if(modal&&!pModal)f='modal';else if(!modal&&tab!==pTab)f=tab>pTab?'tr':'tl';else if(!modal&&!pModal&&tab==0&&sel!==pSel)f='day'}pTab=tab;pModal=!!modal;pSel=sel;return f}
+function draw(){const v=[sched,swaps,leave,rules][tab]();const fx=fxOf(),ap=document.getElementById('app');if(ap.dataset)ap.dataset.fx=fx;
+  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal?modalHTML():'');wire();if(modal=='lv')lu()}
 function tsv(){const it=[];
   work.forEach(d=>{const x=S[d];it.push([d,0,'Shift','',x.s,x.e,hm(x.e)-hm(x.s),lab[x.st]||x.st,x.f||'']) });
   leaves.forEach(l=>it.push([l.d,1,'Leave',l.type,l.full?'':l.s,l.full?'':l.e,dur(l),lab[l.st]||l.st,l.full?'Full day':'Partial']));
@@ -300,9 +394,9 @@ const pS=d=>{if(S[d])put('shifts',{...S[d],d,u:Date.now(),dirty:1})},xS=d=>put('
 const pL=l=>put('leaves',{...l,u:Date.now(),dirty:1}),xL=id=>put('leaves',{id,del:true,u:Date.now(),dirty:1});
 const pH=h=>put('holidays',{...h,u:Date.now(),dirty:1}),xH=d=>put('holidays',{d,del:true,u:Date.now(),dirty:1});
 const pW=w=>put('swaps',{...w,u:Date.now(),dirty:1}),xW=id=>put('swaps',{id,del:true,u:Date.now(),dirty:1});
-const pM=()=>{put('meta',{k:'rules',v:{...R},u:Date.now(),dirty:1});armNotifs()},pB=()=>put('meta',{k:'balances',v:{...base},u:Date.now(),dirty:1});
+const pM=()=>{put('meta',{k:'rules',v:{...R},u:Date.now(),dirty:1});armNotifs()},pB=()=>put('meta',{k:'balances',v:{...base},u:Date.now(),dirty:1}),pT=()=>put('meta',{k:'types',v:TYPES.map(x=>({...x})),u:Date.now(),dirty:1});
 async function boot(){try{db=await dbOpen();dbOk=true;const[sh,lv,me,ho,sw]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]),m=Object.fromEntries(me.map(x=>[x.k,x.v]));
-  if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);sh.filter(x=>!x.del).forEach(x=>{S[x.d]=x;work.push(x.d)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del);holidays=ho.filter(x=>!x.del);swapLog=sw.filter(x=>!x.del);if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
+  if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);sh.filter(x=>!x.del).forEach(x=>{S[x.d]=x;work.push(x.d)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del);holidays=ho.filter(x=>!x.del);swapLog=sw.filter(x=>!x.del);if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);if(Array.isArray(m.types)&&m.types.length)TYPES=m.types;lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
   else{work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[];put('meta',{k:'seeded',v:1})}}catch(e){dbOk=false}}
 function wipe(){work.forEach(d=>xS(d));leaves.forEach(l=>xL(l.id));holidays.forEach(h=>xH(h.d));swapLog.forEach(w=>xW(w.id));work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[]}
 function demo(){wipe();const D=structuredClone(DEMO);Object.assign(S,D.S);work.push(...D.work);leaves=D.leaves;holidays=D.holidays;swapLog=D.swapLog;work.forEach(pS);leaves.forEach(pL);holidays.forEach(pH);swapLog.forEach(pW);lid=Math.max(lid,5);Object.assign(base,DEMO_BASE);pB();draw()}
@@ -314,13 +408,13 @@ const putRaw=(n,v)=>new Promise((res,rej)=>{const t=db.transaction(n,'readwrite'
 const keyOf=(n,r)=>n=='shifts'||n=='holidays'?r.d:n=='leaves'||n=='swaps'?r.id:r.k;
 // Bridge used by js/sync.js. Records merge per record: the newest edit time (u) wins.
 window.syncApi={
-  async dirty(){await ready;const[a,b,c,h,w]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]);return{shifts:a.filter(x=>x.dirty),leaves:b.filter(x=>x.dirty),holidays:h.filter(x=>x.dirty),swaps:w.filter(x=>x.dirty),rules:c.filter(x=>(x.k=='rules'||x.k=='balances')&&x.dirty)}},
+  async dirty(){await ready;const[a,b,c,h,w]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]);return{shifts:a.filter(x=>x.dirty),leaves:b.filter(x=>x.dirty),holidays:h.filter(x=>x.dirty),swaps:w.filter(x=>x.dirty),rules:c.filter(x=>(x.k=='rules'||x.k=='balances'||x.k=='types')&&x.dirty)}},
   async apply(n,r){await ready;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u>=r.u)return;await putRaw(n,{...r,dirty:0});
     if(n=='shifts'){if(r.del){delete S[r.d];const i=work.indexOf(r.d);if(i>=0)work.splice(i,1)}else{S[r.d]={...r};if(!work.includes(r.d)){work.push(r.d);work.sort((a,b)=>a-b)}}}
     else if(n=='leaves'){leaves=leaves.filter(x=>x.id!=r.id);if(!r.del)leaves.push({...r})}
     else if(n=='holidays'){holidays=holidays.filter(x=>x.d!=r.d);if(!r.del)holidays.push({...r})}
     else if(n=='swaps'){swapLog=swapLog.filter(x=>x.id!=r.id);if(!r.del)swapLog.push({...r})}
-    else if(r.k=='rules')Object.assign(R,r.v);else if(r.k=='balances')Object.assign(base,r.v);
+    else if(r.k=='rules')Object.assign(R,r.v);else if(r.k=='balances')Object.assign(base,r.v);else if(r.k=='types'&&Array.isArray(r.v))TYPES=r.v;
     armNotifs();window.redraw()},
   async clean(n,r){await ready;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u==r.u)await putRaw(n,{...cur,dirty:0})}
 };

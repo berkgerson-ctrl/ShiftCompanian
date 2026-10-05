@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0
+
+- **Custom shift types.** Rules > Shift types: add, edit or delete your own (name, letter, start/end, colour; up to 8). Early and Late remain the defaults. Types sync between devices. The expanded calendar, its legend, the add-shift quick-select buttons and the statistics all use them. Hours that match no type, or a shift with partial leave, still show C (a type cannot use the letter C).
+- **Statistics page** (Schedule > Stats, or Rules > Statistics & charts): scheduled hours per month, shift mix, TOIL balance and earned per month, leave taken per type this year, and how much of your six-day-week, workdays-per-week and consecutive-day limits a month uses. Includes a table view of the data.
+- **Motion** (CSS only, transform/opacity): spring slide-in and anticipation on close for forms and the day sheet, springy release when you drag the sheet, press-in on calendar days and buttons, the "+" turns into an X while a form is open, form fields rise in sequence, quick-select buttons morph colour and glow, a drawn checkmark after saving a shift/leave/shift type or importing, and tabs slide left or right. Honors the system "reduce motion" setting.
+- Service worker cache `sc-v5`. Tests: 37 checks.
+
 ## 1.3.0
 
 - Fixed: the "+" add button was drawn behind the bottom navigation on phones. It now sits in front (and stays above the safe-area inset).

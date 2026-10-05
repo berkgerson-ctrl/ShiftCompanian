@@ -1,6 +1,6 @@
 // Service worker: the app shell works offline.
 // Bump VERSION on every release so installed copies pick up the update.
-const VERSION = 'sc-v4';
+const VERSION = 'sc-v5';
 const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/sync.js', 'js/firebase-config.js',
   'js/vendor/xlsx.full.min.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
