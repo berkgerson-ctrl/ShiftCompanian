@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.3
+
+- **Fixed: signing in with Google broke the app (Schedule tab dead, days not tappable, blank screen after refresh).** The cloud sync stored its server timestamp in a field named `s`, the same name a shift uses for its start time (and a partial leave for its start). Every sync replaced start times with a timestamp, and the app crashed when it met a shift with no start time. The timestamp now lives in `sv`.
+- **Self-repair.** On the first sync after updating, a device re-sends all of its complete records so the cloud gets its start times back. Records that lost their start time are ignored (never crash the app, never uploaded). A device that only has damaged copies will receive the good ones from the device that still has them.
+- A screen that fails to draw now shows the recovery screen (Reload, Repair, Backup) instead of freezing silently.
+- Service worker cache `sc-v8`. Tests: 44 checks, including start-time round trips and recovery from damaged data.
+
 ## 1.4.2
 
 - **Sync no longer throws you to the top of the page.** Background redraws (sync status, incoming data) now keep your scroll position, wait until your finger is off the screen, and are combined into one. Before, tapping *Sync now* on the Rules page jumped back to the top, which on Android Opera/Chrome could trigger pull-to-refresh and reload the app mid-sync.

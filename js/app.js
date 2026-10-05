@@ -378,7 +378,8 @@ function saveBHM(){const lines=fv('bm-t').split(/\r?\n/).map(x=>x.trim()).filter
   recs.forEach(r=>{holidays=holidays.filter(h=>h.d!=r.d);holidays.push(r);pH(r)});closeM()}
 let pTab=null,pModal=false,pSel=null;
 function fxOf(){let f='';if(pTab!==null){if(modal&&!pModal)f='modal';else if(!modal&&tab!==pTab)f=tab>pTab?'tr':'tl';else if(!modal&&!pModal&&tab==0&&sel!==pSel)f='day'}pTab=tab;pModal=!!modal;pSel=sel;return f}
-function draw(){const v=[sched,swaps,leave,rules][tab]();const fx=fxOf(),ap=document.getElementById('app');if(ap.dataset)ap.dataset.fx=fx;
+function draw(){try{drawNow()}catch(e){crash(e)}}
+function drawNow(){const v=[sched,swaps,leave,rules][tab]();const fx=fxOf(),ap=document.getElementById('app');if(ap.dataset)ap.dataset.fx=fx;
   const sv=['.page','.sheet','#md'].map(q=>{const e=ap.querySelector(q);return e?e.scrollTop:0});
   ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal?modalHTML():'');if(fx!=='tr'&&fx!=='tl'){const q=ap.querySelector('.page'),w=ap.querySelector('.sheet'),m=ap.querySelector('#md');if(q)q.scrollTop=sv[0];if(w&&fx!=='day')w.scrollTop=sv[1];if(m&&fx!=='modal')m.scrollTop=sv[2]}
   wire();if(modal=='lv')lu();if(!dbOk&&!document.getElementById('wbar')){const w=document.createElement('div');w.id='wbar';w.className='wbar';w.textContent='Storage unavailable: changes will not be saved. Close other copies of the app and reload.';ap.appendChild(w)}}
@@ -409,10 +410,14 @@ const pL=l=>put('leaves',{...l,u:Date.now(),dirty:1}),xL=id=>put('leaves',{id,de
 const pH=h=>put('holidays',{...h,u:Date.now(),dirty:1}),xH=d=>put('holidays',{d,del:true,u:Date.now(),dirty:1});
 const pW=w=>put('swaps',{...w,u:Date.now(),dirty:1}),xW=id=>put('swaps',{id,del:true,u:Date.now(),dirty:1});
 const pM=()=>{put('meta',{k:'rules',v:{...R},u:Date.now(),dirty:1});armNotifs()},pB=()=>put('meta',{k:'balances',v:{...base},u:Date.now(),dirty:1}),pT=()=>put('meta',{k:'types',v:TYPES.map(x=>({...x})),u:Date.now(),dirty:1});
+// A shift needs a start and end time; a partial leave needs its start and end. Records missing them (written by the
+// old sync bug) are ignored everywhere instead of crashing the app, and are never pushed to the cloud.
+const okT=v=>typeof v=='string'&&/^\d{1,2}:\d\d$/.test(v);
+const valid=(n,r)=>!!r&&(r.del||(n=='shifts'?okT(r.s)&&okT(r.e):n=='leaves'?!!r.full||(okT(r.s)&&okT(r.e)):true));
 let bootErr=null;
 async function boot(){try{db=await dbOpen();dbOk=true}catch(e){dbOk=false;bootErr=e;return}
   try{const[sh,lv,me,ho,sw]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]),m=Object.fromEntries(me.map(x=>[x.k,x.v]));
-  if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);sh.filter(x=>!x.del).forEach(x=>{S[x.d]=x;work.push(x.d)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del);holidays=ho.filter(x=>!x.del);swapLog=sw.filter(x=>!x.del);if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);if(Array.isArray(m.types)&&m.types.length)TYPES=m.types;lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
+  if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);sh.filter(x=>!x.del&&valid('shifts',x)).forEach(x=>{S[x.d]=x;work.push(x.d)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del&&valid('leaves',x));holidays=ho.filter(x=>!x.del);swapLog=sw.filter(x=>!x.del);if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);if(Array.isArray(m.types)&&m.types.length)TYPES=m.types;lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
   else{work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[];put('meta',{k:'seeded',v:1})}}catch(e){bootErr=e}}
 function wipe(){work.forEach(d=>xS(d));leaves.forEach(l=>xL(l.id));holidays.forEach(h=>xH(h.d));swapLog.forEach(w=>xW(w.id));work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[]}
 function demo(){wipe();const D=structuredClone(DEMO);Object.assign(S,D.S);work.push(...D.work);leaves=D.leaves;holidays=D.holidays;swapLog=D.swapLog;work.forEach(pS);leaves.forEach(pL);holidays.forEach(pH);swapLog.forEach(pW);lid=Math.max(lid,5);Object.assign(base,DEMO_BASE);pB();draw()}
@@ -439,14 +444,16 @@ const putRaw=(n,v)=>new Promise((res,rej)=>{const t=db.transaction(n,'readwrite'
 const keyOf=(n,r)=>n=='shifts'||n=='holidays'?r.d:n=='leaves'||n=='swaps'?r.id:r.k;
 // Bridge used by js/sync.js. Records merge per record: the newest edit time (u) wins.
 window.syncApi={
-  async dirty(){await ready;const[a,b,c,h,w]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]);return{shifts:a.filter(x=>x.dirty),leaves:b.filter(x=>x.dirty),holidays:h.filter(x=>x.dirty),swaps:w.filter(x=>x.dirty),rules:c.filter(x=>(x.k=='rules'||x.k=='balances'||x.k=='types')&&x.dirty)}},
-  async apply(n,r){await ready;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u>=r.u)return;await putRaw(n,{...r,dirty:0});
+  async dirty(){await ready;const[a,b,c,h,w]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]);return{shifts:a.filter(x=>x.dirty&&valid('shifts',x)),leaves:b.filter(x=>x.dirty&&valid('leaves',x)),holidays:h.filter(x=>x.dirty),swaps:w.filter(x=>x.dirty),rules:c.filter(x=>(x.k=='rules'||x.k=='balances'||x.k=='types')&&x.dirty)}},
+  async apply(n,r){await ready;if(!valid(n,r))return;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u>=r.u&&valid(n,cur))return;await putRaw(n,{...r,dirty:0});
     if(n=='shifts'){if(r.del){delete S[r.d];const i=work.indexOf(r.d);if(i>=0)work.splice(i,1)}else{S[r.d]={...r};if(!work.includes(r.d)){work.push(r.d);work.sort((a,b)=>a-b)}}}
     else if(n=='leaves'){leaves=leaves.filter(x=>x.id!=r.id);if(!r.del)leaves.push({...r})}
     else if(n=='holidays'){holidays=holidays.filter(x=>x.d!=r.d);if(!r.del)holidays.push({...r})}
     else if(n=='swaps'){swapLog=swapLog.filter(x=>x.id!=r.id);if(!r.del)swapLog.push({...r})}
     else if(r.k=='rules')Object.assign(R,r.v);else if(r.k=='balances')Object.assign(base,r.v);else if(r.k=='types'&&Array.isArray(r.v))TYPES=r.v;
     armNotifs();window.redraw()},
+  async markAllDirty(){await ready;for(const n of['shifts','leaves','holidays','swaps','meta'])for(const x of await getAll(n)){
+    if(x.dirty||!valid(n,x)||(n=='meta'&&!(x.k=='rules'||x.k=='balances'||x.k=='types')))continue;await putRaw(n,{...x,dirty:1})}},
   async clean(n,r){await ready;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u==r.u)await putRaw(n,{...cur,dirty:0})}
 };
 // ---------- leave-by reminders + calendar file ----------

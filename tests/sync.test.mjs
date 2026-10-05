@@ -33,12 +33,16 @@ export const collection = (db, ...p) => ({ prefix: p.join('/') + '/' });
 export const where = (f, op, v) => ({ f, op, v });
 export const query = (c, w) => ({ c, w });
 export const doc = (db, ...p) => ({ path: p.join('/') });
-export const getDocs = async q => ({ docs: [...C().docs.entries()]
-  .filter(([k, v]) => k.startsWith(q.c.prefix) && v.s.ms >= q.w.v.ms)
-  .map(([, v]) => ({ data: () => ({ ...JSON.parse(JSON.stringify(v)), s: ts(v.s.ms) }) })) });
+export const getDocs = async q => { const c = q.c || q, w = q.w;
+  return { docs: [...C().docs.entries()]
+    .filter(([k, v]) => k.startsWith(c.prefix) && (!w || (v[w.f] && v[w.f].ms >= w.v.ms)))
+    .map(([, v]) => ({ data: () => { const o = JSON.parse(JSON.stringify(v));
+      for (const k of Object.keys(o)) if (o[k] && o[k].__ts) o[k] = ts(o[k].ms); return o; } })) }; };
 export const writeBatch = () => { const ops = [];
   return { set: (ref, data) => ops.push([ref.path, data]),
-    commit: async () => { for (const [p, d] of ops) C().docs.set(p, { ...JSON.parse(JSON.stringify(d)), s: ts(++C().clock) }); } }; };`);
+    commit: async () => { for (const [p, d] of ops) { const o = JSON.parse(JSON.stringify(d));
+      for (const k of Object.keys(o)) if (o[k] && o[k].__server) o[k] = { __ts: true, ms: ++C().clock };
+      C().docs.set(p, o); } } }; };`);
 
 // ---- fake browser globals ---------------------------------------------------------------------
 globalThis.__cloud = { docs: new Map(), clock: 1000 };
@@ -279,6 +283,54 @@ sx.setLeaves([{ id: 2, d: O + 7, type: 'PTO', full: true, st: 'Approved' }, { id
 ms = sx.monthStats(2026, 9); ls = sx.limitStats(2026, 9);
 assert.equal(ms.n, 6); assert.equal(sx.takenYear('PTO', 2026), 468); assert.equal(sx.takenYear('Sick', 2026), 0);
 assert.equal(ls.six, 0); ok('approved full-day leave removes a day from hours and limits; under-review leave does not; taken-this-year counts approved only');
+
+
+// 12. REGRESSION: the server timestamp must never replace a shift's start time (field `s`).
+globalThis.__user = { email: 'r@example.com', uid: 'u5' };
+const P = await device('P'), Q = await device('Q');
+P.use(); P.addShift(5); P.app.setLeaves([{ id: 501, d: O + 8, type: 'PTO', full: false, s: '12:00', e: '14:00', st: 'Approved' }]); P.app.pL(P.app.leaves()[0]);
+await sleep(5); await P.run(); await Q.run();
+assert.equal(Q.app.S[O + 5].s, '07:00'); assert.equal(Q.app.S[O + 5].e, '14:48');
+assert.equal(Q.app.leaves()[0].s, '12:00'); assert.equal(Q.app.leaves()[0].e, '14:00');
+assert.equal(globalThis.__cloud.docs.get('users/u5/shifts/' + (O + 5)).s, '07:00');
+ok('start/end times survive a round trip through the cloud (shift and partial leave)');
+const Q2 = await device('Q2', Q.idb);              // reopen device Q from its saved database: nothing may be missing
+assert.equal(Q2.app.S[O + 5].s, '07:00'); assert.ok(Q2.app.work.includes(O + 5)); ok('a restart after syncing still has every start time');
+
+// 13. REGRESSION: data damaged by the old bug is ignored (no crash), repaired from a good device, and never pushed back
+globalThis.__user = { email: 'old@example.com', uid: 'u6' };
+const G = await device('G');                     // "good" device with intact local data
+G.use(); G.addShift(6); G.addShift(7); G.app.setLeaves([{ id: 601, d: O + 9, type: 'PTO', full: false, s: '09:00', e: '11:00', st: 'Review' }]); G.app.pL(G.app.leaves()[0]);
+await sleep(5);
+// what the OLD sync wrote to the cloud: `s` replaced by a server timestamp, no `sv`
+const legacy = (path, rec) => globalThis.__cloud.docs.set(path, { ...rec, s: { __ts: true, ms: ++globalThis.__cloud.clock } });
+for (const d of [6, 7]) legacy('users/u6/shifts/' + (O + d), { d: O + d, e: '14:48', st: 'Scheduled', f: '', u: 5 });
+legacy('users/u6/leaves/601', { id: 601, d: O + 9, type: 'PTO', full: false, e: '11:00', st: 'Review', u: 5 });
+legacy('users/u6/leaves/602', { id: 602, d: O + 11, type: 'Sick', full: true, e: null, st: 'Approved', u: 5 });
+legacy('users/u6/swaps/603', { id: 603, give: O + 6, take: O + 7, who: 'Sam', st: 'Planned', fu: 0, note: '', u: 5 });
+// a phone that signed in and pulled the damaged copies (u equal to the good device's)
+const BAD = makeIdb(); BAD.version = 2;
+for (const [nm, kp] of [['shifts', 'd'], ['leaves', 'id'], ['meta', 'k'], ['holidays', 'd'], ['swaps', 'id']]) BAD.stores[nm] = { kp, m: new Map() };
+BAD.stores.meta.m.set('seeded', { k: 'seeded', v: 1 });
+BAD.stores.shifts.m.set(O + 6, { d: O + 6, e: '14:48', st: 'Scheduled', f: '', u: 5, dirty: 0 });
+BAD.stores.shifts.m.set(O + 20, { d: O + 20, e: '14:48', st: 'Scheduled', f: '', u: 5, dirty: 1 });   // damaged AND marked dirty
+const H = await device('H', BAD);
+assert.ok(!H.app.work.includes(O + 6) && !H.app.work.includes(O + 20)); ok('damaged shifts are ignored at start-up instead of crashing');
+assert.equal(globalThis.__cloud.docs.get('users/u6/shifts/' + (O + 7)).sv, undefined);
+await G.run();                                   // good device signs in: repairs the cloud
+const c6 = globalThis.__cloud.docs.get('users/u6/shifts/' + (O + 6));
+assert.equal(c6.s, '07:00'); assert.ok(c6.sv && c6.sv.__ts); ok('a good device repairs the damaged cloud copies');
+assert.equal(globalThis.__cloud.docs.get('users/u6/shifts/' + (O + 20)), undefined); ok('a damaged local record is never pushed to the cloud');
+await H.run();
+assert.equal(H.app.S[O + 6].s, '07:00'); assert.ok(H.app.work.includes(O + 7)); assert.equal(H.app.leaves().find(l => l.id == 601).s, '09:00');
+assert.ok(H.app.leaves().some(l => l.id == 602), 'legacy full-day leave still arrives'); assert.equal(H.app.swapLog()[0].who, 'Sam');
+ok('the damaged phone recovers its data from the repaired cloud');
+// a device with ONLY damaged data (nothing good anywhere) must not push garbage or crash
+globalThis.__user = { email: 'dead@example.com', uid: 'u7' };
+legacy('users/u7/shifts/' + (O + 1), { d: O + 1, e: '14:48', st: 'Scheduled', f: '', u: 5 });
+const Z = await device('Z'); await Z.run();
+assert.equal(Z.app.work.length, 0); assert.equal(globalThis.__cloud.docs.get('users/u7/shifts/' + (O + 1)).sv, undefined);
+ok('a start time lost for good is skipped, not invented and not re-uploaded');
 
 console.log('\nAll ' + n + ' sync checks passed.');
 fs.rmSync(tmp, { recursive: true, force: true });

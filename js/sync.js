@@ -1,6 +1,8 @@
 // Cloud sync (Firebase Auth + Firestore).
 // IndexedDB stays the source of truth; this module only exchanges records with the cloud.
 // Conflict rule: per record, the newest client edit time `u` wins. Deletes travel as tombstones (`del: true`).
+// The server receive-time lives in field `sv`. (It used to be `s`, which is ALSO a shift's start time /
+// a partial leave's start time, so every sync overwrote the start time with a timestamp. Never reuse `s`.)
 import { firebaseConfig } from './firebase-config.js';
 
 const SDK = window.SC_SDK_BASE || 'https://www.gstatic.com/firebasejs/10.12.2/';
@@ -54,19 +56,27 @@ async function run() {
   if (busy) { again = true; return; }
   busy = true; set({ status: 'syncing', error: '' });
   try {
-    const { f, db } = fb, api = window.syncApi, key = 'sc-cursor:' + user.uid;
-    const cursor = +(localStorage.getItem(key) || 0);
+    const { f, db } = fb, api = window.syncApi, uid = user.uid;
+    const key = 'sc-cursor2:' + uid, mkey = 'sc-fixed-s:' + uid;
+    const migrating = !localStorage.getItem(mkey);      // one-time repair of data written by the old, buggy sync
+    const cursor = migrating ? 0 : +(localStorage.getItem(key) || 0);
     let maxS = cursor;
 
     // 1) PULL records the server received since the cursor (>= so same-millisecond writes are never missed).
+    //    During the one-time repair we read every document, because the old ones have no `sv` field yet.
     for (const [store, col] of MAP) {
-      const q = f.query(f.collection(db, 'users', user.uid, col), f.where('s', '>=', f.Timestamp.fromMillis(cursor)));
+      const c = f.collection(db, 'users', uid, col);
+      const q = migrating ? c : f.query(c, f.where('sv', '>=', f.Timestamp.fromMillis(cursor)));
       for (const d of (await f.getDocs(q)).docs) {
-        const { s, ...rec } = d.data();
-        if (s) maxS = Math.max(maxS, s.toMillis());
-        await api.apply(store, rec);   // applied only if newer than the local copy
+        const { sv, ...rec } = d.data();
+        if (sv && sv.toMillis) maxS = Math.max(maxS, sv.toMillis());
+        else if (rec.s && typeof rec.s.toMillis === 'function') delete rec.s;   // old doc: `s` is a server timestamp, the start time is gone
+        await api.apply(store, rec);   // applied only if newer than the local copy AND complete
       }
     }
+
+    // Repair: re-send every complete local record so the cloud copies get their start times back.
+    if (migrating) await api.markAllDirty();
 
     // 2) PUSH local records still marked dirty (those not overwritten by a newer remote copy in step 1).
     const dirty = await api.dirty();
@@ -80,13 +90,14 @@ async function run() {
       const batch = f.writeBatch(db);
       items.slice(i, i + 400).forEach(([, col, id, r]) => {
         const { dirty: _d, ...data } = r;
-        batch.set(f.doc(db, 'users', user.uid, col, id), { ...data, s: f.serverTimestamp() });
+        batch.set(f.doc(db, 'users', uid, col, id), { ...data, sv: f.serverTimestamp() });
       });
       await batch.commit();
     }
     for (const [store, , , r] of items) await api.clean(store, r);
 
     localStorage.setItem(key, String(maxS));
+    if (migrating) localStorage.setItem(mkey, '1');
     set({ status: 'ok', last: Date.now() });
   } catch (e) {
     set({ status: 'error', error: e.code || e.message });
