@@ -1,5 +1,5 @@
 {
-  "id": "./",
+  "id": "shift-companion-app",
   "name": "Shift Companion",
   "short_name": "Shift Companion",
   "description": "Offline-first shift, leave and TOIL tracker with personal rule checks.",
