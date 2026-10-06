@@ -170,3 +170,6 @@ html,body{overscroll-behavior-y:contain}
 .page,.sheet,.mod,.crash{overscroll-behavior:contain}
 .boot{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#fff}
 .boot b{font-size:20px;letter-spacing:.3px}.boot span{color:#9fb0d6;animation:fadeIn 1s ease infinite alternate}
+
+/* daily breaks */
+.bks{display:flex;gap:8px;margin:10px 0 8px}.bk{flex:1;min-width:0;height:46px;border-radius:12px;border:2px solid #c3cfe8;background:#fff;color:var(--mute);font-size:17px;font-weight:700;cursor:pointer;transition:background .2s,border-color .2s,transform .14s}.bk.on{background:var(--green);border-color:var(--green);color:#fff}.bk:active{transform:scale(.94)}

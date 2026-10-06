@@ -70,6 +70,7 @@ function cal(){const big=col;let h='<div class="grid'+(big?' big':'')+'">'+DOW.m
   if(big)h+='<div class="lg">'+TYPES.map(x=>`<span><u style="background:${x.c}">${esc(x.l)}</u>${esc(x.n)}</span>`).join('')+`<span><u style="background:${CUSTOM_C}">C</u>Custom / partial</span><span><u class="offd">OFF</u>Day off</span><span><u class="lva"></u>Leave</span><span><u class="lvr"></u>Pending</span></div>`;
   return h}
 function sched(){const s=S[sel];let h=`<div class="top"><div class="bar"><span onclick="openStats()" style="cursor:pointer;font-size:12px;border:1px solid #5b6f9e;border-radius:12px;padding:3px 10px">Stats</span><span>Schedule</span><span onclick="openImp()" style="cursor:pointer;font-size:12px;border:1px solid #5b6f9e;border-radius:12px;padding:3px 10px">Import</span></div><div class="sub row" style="font-size:15px"><span onclick="mv(-1)" style="cursor:pointer;padding:4px 14px">‹</span><b onclick="goto(TODAY);draw()" style="cursor:pointer">${MON[vm.m]} ${vm.y}</b><span onclick="mv(1)" style="cursor:pointer;padding:4px 14px">›</span></div>${cal()}</div><div class="sheet" id="sh"><div class="grab" id="gr"></div><h2>${DAYN[dow(sel)]}, ${fd(sel)}</h2>`;
+  if(s||sel==TODAY)h+=breaksCard(sel);
   if(!s)h+='<div class="card"><div class="t">Day off</div><div class="m">Standard day = 7h 48m. Tap + to add a shift.</div></div>';
   else{const[hh,mm]=s.s.split(':').map(Number);const l=hh*60+mm-R.commute;
     h+=`<div class="card"><div class="row"><div class="t">${s.s} – ${s.e}</div><span class="pill st-${s.st}">${lab[s.st]||s.st}</span></div><div class="m">Sun–Sat week · ${DOW[dow(sel)]}</div>
@@ -78,6 +79,15 @@ function sched(){const s=S[sel];let h=`<div class="top"><div class="bar"><span o
   const H=hol(sel);if(H){const stt=holState(H),p=HL[stt];h+=`<div class="card" style="border-left:4px solid #f2994a;cursor:pointer" onclick="openBH(${H.d})"><div class="row"><div class="t">Bank holiday · ${esc(H.name)}</div>${p[0]?`<span class="pill st-${p[0]}">${p[1]}</span>`:''}</div><div class="m">${holNote(stt)}</div></div>`}
   h+=swapLog.filter(w=>w.give==sel||w.take==sel).map(w=>`<div class="card" style="border-left:4px solid #b58cff;cursor:pointer" onclick="openW(${w.id})"><div class="row"><div class="t">Swap · ${w.give==sel?'giving this day away':'taking this day'}</div><span class="pill st-${w.st}">${lab[w.st]||w.st}</span></div><div class="m">${w.who?(w.give==sel?'To ':'From ')+esc(w.who)+' · ':''}${esc(swapTitle(w))}</div></div>`).join('');
   return h+'</div>'}
+// ---------- daily breaks ----------
+// Tick a break after taking it. Each calendar day has its own ticks, so a new day always starts empty.
+// Stored on this device only (localStorage 'sc-breaks': {dayNumber: bitmask}); days older than 60 days are dropped.
+const BREAKS=6;
+const BK={get(){try{return JSON.parse(localStorage.getItem('sc-breaks')||'{}')}catch(e){return{}}},set(o){try{localStorage.setItem('sc-breaks',JSON.stringify(o))}catch(e){}}};
+const bkMask=d=>+BK.get()[d]||0,bkOn=(m,i)=>(m>>i&1)==1,bkCount=m=>{let c=0;for(let i=0;i<BREAKS;i++)if(bkOn(m,i))c++;return c};
+function tgB(d,i){const o=BK.get();o[d]=(+o[d]||0)^(1<<i);if(!o[d])delete o[d];for(const k of Object.keys(o))if(+k<TODAY-60)delete o[k];BK.set(o);try{navigator.vibrate&&navigator.vibrate(6)}catch(e){}draw()}
+function breaksCard(d){const m=bkMask(d),n=bkCount(m);
+  return `<div class="card"><div class="row"><div class="t">Breaks</div><span class="pill ${n>=BREAKS?'st-Approved':'st-Planned'}">${n} / ${BREAKS} used</span></div><div class="bks">${[...Array(BREAKS)].map((_,i)=>`<button type="button" class="bk${bkOn(m,i)?' on':''}" role="checkbox" aria-checked="${bkOn(m,i)}" aria-label="Break ${i+1}" onclick="tgB(${d},${i})">${bkOn(m,i)?'✓':i+1}</button>`).join('')}</div><div class="m">${n>=BREAKS?'All breaks taken':(BREAKS-n)+' left'} · new day, new boxes</div></div>`}
 function swaps(){
   const due=swapLog.filter(w=>fuOpen(w)&&w.fu<=TODAY+3).sort((a,b)=>a.fu-b.fu);
   const L=[...swapLog].sort((a,b)=>Math.max(b.give,b.take)-Math.max(a.give,a.take));
@@ -471,7 +481,7 @@ const shownGet=()=>{try{return JSON.parse(localStorage.getItem('sc-shown')||'{}'
 async function fire(e){const sh=shownGet(),t=Date.now();if(sh[e.key])return;sh[e.key]=t;for(const k of Object.keys(sh))if(t-sh[k]>3*864e5)delete sh[k];shownSet(sh);
   try{const reg=await navigator.serviceWorker.ready;await reg.showNotification(e.title,{body:e.body,tag:e.key,icon:'icons/icon-192.png',data:{url:'./'}})}catch(err){}}
 let timers=[];
-function armNotifs(now){now=now||Date.now();timers.forEach(clearTimeout);timers=[];TODAY=todayN(now);
+function armNotifs(now){now=now||Date.now();timers.forEach(clearTimeout);timers=[];{const o=TODAY;TODAY=todayN(now);if(TODAY!=o&&sel==o){goto(TODAY);col=false;window.redraw&&window.redraw()}}
   if(!NS.get().on||perm()!='granted')return;
   const sh=shownGet();
   evList(now).forEach(e=>{if(sh[e.key])return;if(e.at<=now){if(now<e.until)fire(e)}else if(e.at-now<36*36e5)timers.push(setTimeout(()=>fire(e),e.at-now))})}
