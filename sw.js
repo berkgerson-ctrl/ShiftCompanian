@@ -1,6 +1,6 @@
 // Service worker: the app shell works offline.
 // Bump VERSION on every release so installed copies pick up the update.
-const VERSION = 'sc-v10';
+const VERSION = 'sc-v11';
 // Without these the app cannot start, so a failed download aborts the install and the old copy keeps working.
 const REQUIRED = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/sync.js', 'manifest.webmanifest'];
 // Nice to have offline; a missing one must not break the install.

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.0
+
+- **Extra time (ET).** Add "Extra time after shift" to any shift and choose how it is reimbursed: *Time* (added to a new **ET** balance) or *Money* (paid, tracked for payroll). ET is also a leave type, so approved ET requests are deducted from the balance. ET counts once its day arrives. Opening ET balance is on Rules.
+- **Overtime (OT).** A voluntary extra day: status *Overtime (extra day)*, pink, labelled OT. It must pass the same rule checks (week, days in a row, six-day weeks), counts toward those limits, but is kept out of regular scheduled hours and the shift mix. Statistics has an *Overtime & extra time* row. An overtime day on a bank holiday earns no company TOIL day.
+- **Check swap / Check OT** buttons on every day off. Swap lets you pick the shift you would give away; "Log this swap" pre-fills the swap form. "Add as overtime" opens the shift form with Overtime selected.
+- **Colour coding in the normal calendar**, the same as the expanded one (E/L/C tints, OFF dimmed, leave fills, OT pink), with a legend. Small orange dot = day has extra time.
+- Payroll export has Overtime and Extra time rows. Import accepts "Overtime" as a status.
+- Service worker cache `sc-v11`. Tests: 55 checks.
+
+## 1.4.4
+
+- Manifest now has its own unique `id` (`shift-companion-app`) so Chrome on Android no longer mistakes the app for one already installed from the same github.io site. Service worker cache `sc-v9`.
+
 ## 1.4.3
 
 - **Fixed: signing in with Google broke the app (Schedule tab dead, days not tappable, blank screen after refresh).** The cloud sync stored its server timestamp in a field named `s`, the same name a shift uses for its start time (and a partial leave for its start). Every sync replaced start times with a timestamp, and the app crashed when it met a shift with no start time. The timestamp now lives in `sv`.

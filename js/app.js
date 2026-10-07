@@ -15,9 +15,10 @@ const defTypes=()=>[{id:'E',n:'Early',l:'E',s:'08:50',e:'16:38',c:TYPE_COLORS[0]
 let TYPES=defTypes();
 const typeOf=d=>{const s=S[d];return s&&TYPES.find(x=>x.s==s.s&&x.e==s.e)||null};
 const partial=d=>leaves.some(l=>l.d==d&&!l.full&&l.st!='Denied');
-const kind=d=>{const s=S[d];if(!s)return '';if(partial(d))return 'C';const x=typeOf(d);return x?x.l:'C'};
+const isOT=d=>{const s=S[d];return !!s&&s.st=='OT'};   // overtime = a voluntary extra day (status OT)
+const kind=d=>{const s=S[d];if(!s)return '';if(s.st=='OT')return 'OT';if(partial(d))return 'C';const x=typeOf(d);return x?x.l:'C'};
 const fullLv=d=>leaves.find(l=>l.d==d&&l.full&&l.st!='Denied');
-const DEMO_BASE={PTO:36*60+12,TOIL:11*60+30,Sick:5*468},base={PTO:0,TOIL:0,Sick:0};
+const DEMO_BASE={PTO:36*60+12,TOIL:11*60+30,Sick:5*468},base={PTO:0,TOIL:0,Sick:0,ET:0};
 const hm=t=>{const[a,b]=String(t).split(':').map(Number);return a*60+b};
 let leaves=[{id:1,d:O+5,type:'PTO',full:true,st:'Review'},{id:2,d:O+20,type:'PTO',full:true,st:'Denied'},{id:3,d:O+23,type:'PTO',full:false,s:'12:00',e:'14:00',st:'Approved'},{id:4,d:O+9,type:'Sick',full:true,st:'Approved'}],lid=5;
 const dur=l=>l.full?STD:Math.min(STD,hm(l.e)-hm(l.s));
@@ -26,13 +27,18 @@ let holidays=[],swapLog=[];
 const TOIL_DAY=STD,hol=d=>holidays.find(h=>h.d==d);
 // Bank holiday TOIL: a shift on the day = scheduled (the company sets shifts) = earn 1 day once the day arrives.
 // A full-day leave request of any type (PTO, TOIL, Sick) that is not Denied cancels it; partial leave does not.
-function holState(h){if(!S[h.d])return 'off';
+function holState(h){if(!S[h.d]||S[h.d].st=='OT')return 'off';
   if(leaves.some(l=>l.d==h.d&&l.full&&l.st!='Denied'))return 'blocked';
   return h.d<=TODAY?'earned':'pending'}
-const toilEarned=()=>holidays.filter(h=>holState(h)=='earned').length*TOIL_DAY,bal=k=>base[k]+(k=='TOIL'?toilEarned():0);
+const toilEarned=()=>holidays.filter(h=>holState(h)=='earned').length*TOIL_DAY,bal=k=>base[k]+(k=='TOIL'?toilEarned():0)+(k=='ET'?etEarned():0);
+// Extra time (ET): minutes worked past a shift (field x), reimbursed as 'time' (adds to the ET balance) or 'money' (paid).
+const exMin=d=>{const s=S[d];return s&&s.x>0&&s.st!='Denied'?+s.x:0};
+const etEarned=()=>work.reduce((a,d)=>a+(d<=TODAY&&S[d]&&S[d].xr=='time'?exMin(d):0),0);
+const exYear=(y,r)=>work.reduce((a,d)=>a+(UD(d).getUTCFullYear()==y&&S[d]&&S[d].xr==r?exMin(d):0),0);
+function parseX(v){v=String(v).trim().toLowerCase();if(!v)return 0;let m;if(m=v.match(/^(\d{1,2}):([0-5]\d)$/))return +m[1]*60+ +m[2];if(m=v.match(/^(\d{1,3})\s*(m|min)?$/))return +m[1];return NaN}
 const fm=m=>{const ng=m<0;m=Math.abs(m);const d=Math.floor(m/STD),r=m%STD;return (ng?'−':'')+(d?d+'d ':'')+Math.floor(r/60)+'h '+String(r%60).padStart(2,'0')+'m'};
-const lab={Review:'Under Review'};
-let tab=0,sel=TODAY,vm={y:_n.getFullYear(),m:_n.getMonth()},out='',col=false,modal=false,warn=false,editing=null,dl=false,imp=null,impDone='',lvId=null,swId=null,bhId=null;
+const lab={Review:'Under Review',OT:'Overtime'};
+let tab=0,sel=TODAY,preSt=null,chkMode='ot',chkGive=0,swPre={},vm={y:_n.getFullYear(),m:_n.getMonth()},out='',col=false,modal=false,warn=false,editing=null,dl=false,imp=null,impDone='',lvId=null,swId=null,bhId=null;
 function mv(k){let m=vm.m+k,y=vm.y;if(m<0){m=11;y--}if(m>11){m=0;y++}vm={y,m};draw()}
 function goto(d){sel=d;const t=UD(d);vm={y:t.getUTCFullYear(),m:t.getUTCMonth()}}
 const newId=()=>Date.now()*1000+Math.floor(Math.random()*1000);
@@ -60,25 +66,40 @@ function tapDay(d){try{navigator.vibrate&&navigator.vibrate(6)}catch(e){}sel=d;c
 function cal(){const big=col;let h='<div class="grid'+(big?' big':'')+'">'+DOW.map(x=>`<div class="h">${x}</div>`).join('');
   const f1=E(vm.y,vm.m,1),nd=new Date(Date.UTC(vm.y,vm.m+1,0)).getUTCDate();
   for(let i=0;i<dow(f1);i++)h+='<div></div>';
-  for(let k=1;k<=nd;k++){const d=f1+k-1,s=S[d];const c=s?({Scheduled:'#5b9bff',Planned:'#7c6cf0',Review:'#d95f18',Approved:'#1fb67a',Denied:'#e5484d'})[s.st]:'';
+  for(let k=1;k<=nd;k++){const d=f1+k-1,s=S[d];const c=s?({Scheduled:'#5b9bff',Planned:'#7c6cf0',Review:'#d95f18',Approved:'#1fb67a',Denied:'#e5484d',OT:'#e0489b'})[s.st]:'';
     const fl=fullLv(d);let cls='',tag='',sty='';
-    if(big){if(fl){cls=fl.st=='Approved'?'lva':'lvr';tag=`<em class="tg">${fl.type=='Sick'?'SICK':fl.type}</em>`}
-      else if(!s){cls='offd';tag='<em class="tg">OFF</em>'}
-      else{const q=kind(d),x=q=='C'?null:typeOf(d);cls=x?'kt':'kC';if(x)sty=`style="background:${x.c}33"`;tag=`<em class="tg lt">${esc(q)}</em>`}}
-    h+=`<div class="d ${cls} ${d==sel?'sel':''} ${d==TODAY?'today':''} ${hol(d)?'bh':''}" ${sty} onclick="tapDay(${d})"><b>${k}</b>${big?tag:''}${swapLog.some(w=>w.give==d||w.take==d)?'<i class="sw"></i>':''}${leaves.some(l=>l.d==d)&&!(big&&fl)?'<i class="lv"></i>':''}${s&&!(big&&!fl)?`<i style="background:${c}"></i>`:''}</div>`}
+    // colour coding is the same in the compact and the expanded calendar
+    if(fl){cls=fl.st=='Approved'?'lva':'lvr';tag=`<em class="tg">${fl.type=='Sick'?'SICK':fl.type}</em>`}
+    else if(!s){cls='offd';tag=big?'<em class="tg">OFF</em>':''}
+    else if(s.st=='OT'){cls='ot';tag='<em class="tg lt">OT</em>'}
+    else{const q=kind(d),x=q=='C'?null:typeOf(d);cls=x?'kt':'kC';if(x)sty=`style="background:${x.c}33"`;tag=`<em class="tg lt">${esc(q)}</em>`}
+    h+=`<div class="d ${cls} ${d==sel?'sel':''} ${d==TODAY?'today':''} ${hol(d)?'bh':''}" ${sty} onclick="tapDay(${d})"><b>${k}</b>${tag}${swapLog.some(w=>w.give==d||w.take==d)?'<i class="sw"></i>':''}${leaves.some(l=>l.d==d)&&!fl?'<i class="lv"></i>':''}${s&&!(big&&!fl)?`<i style="background:${c}"></i>`:''}${exMin(d)?'<u class="xt"></u>':''}</div>`}
   h+='</div>';
-  if(big)h+='<div class="lg">'+TYPES.map(x=>`<span><u style="background:${x.c}">${esc(x.l)}</u>${esc(x.n)}</span>`).join('')+`<span><u style="background:${CUSTOM_C}">C</u>Custom / partial</span><span><u class="offd">OFF</u>Day off</span><span><u class="lva"></u>Leave</span><span><u class="lvr"></u>Pending</span></div>`;
+  h+='<div class="lg">'+TYPES.map(x=>`<span><u style="background:${x.c}">${esc(x.l)}</u>${esc(x.n)}</span>`).join('')+`<span><u style="background:${CUSTOM_C}">C</u>Custom / partial</span><span><u class="ot">OT</u>Overtime</span><span><u class="offd">OFF</u>Day off</span><span><u class="lva"></u>Leave</span><span><u class="lvr"></u>Pending</span></div>`;
   return h}
 function sched(){const s=S[sel];let h=`<div class="top"><div class="bar"><span onclick="openStats()" style="cursor:pointer;font-size:12px;border:1px solid #5b6f9e;border-radius:12px;padding:3px 10px">Stats</span><span>Schedule</span><span onclick="openImp()" style="cursor:pointer;font-size:12px;border:1px solid #5b6f9e;border-radius:12px;padding:3px 10px">Import</span></div><div class="sub row" style="font-size:15px"><span onclick="mv(-1)" style="cursor:pointer;padding:4px 14px">‹</span><b onclick="goto(TODAY);draw()" style="cursor:pointer">${MON[vm.m]} ${vm.y}</b><span onclick="mv(1)" style="cursor:pointer;padding:4px 14px">›</span></div>${cal()}</div><div class="sheet" id="sh"><div class="grab" id="gr"></div><h2>${DAYN[dow(sel)]}, ${fd(sel)}</h2>`;
   if(s||sel==TODAY)h+=breaksCard(sel);
-  if(!s)h+='<div class="card"><div class="t">Day off</div><div class="m">Standard day = 7h 48m. Tap + to add a shift.</div></div>';
+  if(!s)h+='<div class="card"><div class="t">Day off</div><div class="m">Standard day = 7h 48m. Tap + to add a shift.</div><div class="two" style="margin-top:10px"><button class="btn" style="margin:0" onclick="openChk(\'swap\')">Check swap</button><button class="btn" style="margin:0;background:#e0489b" onclick="openChk(\'ot\')">Check OT</button></div></div>';
   else{const[hh,mm]=s.s.split(':').map(Number);const l=hh*60+mm-R.commute;
     h+=`<div class="card"><div class="row"><div class="t">${s.s} – ${s.e}</div><span class="pill st-${s.st}">${lab[s.st]||s.st}</span></div><div class="m">Sun–Sat week · ${DOW[dow(sel)]}</div>
-    <span class="tag tg-b">Leave by ${tm(((l%1440)+1440)%1440)}</span>${s.f?`<span class="tag tg-o">${s.f}</span>`:''}<button class="btn" style="margin-top:12px" onclick="openM(${sel})">Edit shift</button></div>`}
+    <span class="tag tg-b">Leave by ${tm(((l%1440)+1440)%1440)}</span>${s.st=='OT'?'<span class="tag tg-ot">Overtime · extra day</span>':''}${exMin(sel)?`<span class="tag tg-o">Extra ${fm(exMin(sel))} · ${s.xr=='time'?'as time (ET)':'paid'}</span>`:''}${s.f?`<span class="tag tg-o">${s.f}</span>`:''}<button class="btn" style="margin-top:12px" onclick="openM(${sel})">Edit shift</button></div>`}
   h+=leaves.filter(l=>l.d==sel).map(l=>`<div class="card" style="border-left:4px solid #f2c94c;cursor:pointer" onclick="openL(${l.id})"><div class="row"><div class="t">${l.type} leave · ${l.full?'Full day':'Partial'}</div><span class="pill st-${l.st}">${lab[l.st]||l.st}</span></div><div class="m">${l.full?'':l.s+'–'+l.e+' · '}${fm(dur(l))}${l.st=='Approved'?' deducted':l.st=='Denied'?' not deducted':' requested'}</div></div>`).join('');
   const H=hol(sel);if(H){const stt=holState(H),p=HL[stt];h+=`<div class="card" style="border-left:4px solid #f2994a;cursor:pointer" onclick="openBH(${H.d})"><div class="row"><div class="t">Bank holiday · ${esc(H.name)}</div>${p[0]?`<span class="pill st-${p[0]}">${p[1]}</span>`:''}</div><div class="m">${holNote(stt)}</div></div>`}
   h+=swapLog.filter(w=>w.give==sel||w.take==sel).map(w=>`<div class="card" style="border-left:4px solid #b58cff;cursor:pointer" onclick="openW(${w.id})"><div class="row"><div class="t">Swap · ${w.give==sel?'giving this day away':'taking this day'}</div><span class="pill st-${w.st}">${lab[w.st]||w.st}</span></div><div class="m">${w.who?(w.give==sel?'To ':'From ')+esc(w.who)+' · ':''}${esc(swapTitle(w))}</div></div>`).join('');
   return h+'</div>'}
+// ---------- check an off day: swap / overtime ----------
+function chkErrors(){const d=sel;if(off(d))return['You are on approved leave that day'];if(work.includes(d))return['You already work that day'];return check(d,chkMode=='swap'&&chkGive?chkGive:undefined)}
+function chkHTML(){const d=sel,sw=chkMode=='swap',e=chkErrors(),mine=work.filter(x=>Math.abs(x-d)<=14&&S[x].st!='Denied'&&!off(x)).sort((a,b)=>a-b);
+  const res=e.length?`<b class="bad">✗ Not safe for ${fd(d)}</b><br>${e.join('<br>')}`:`<b class="ok">✓ ${fd(d)} is safe ${sw?'to take':'to work as overtime'}</b><br><span class="m">Within ${R.week} days a week, ${R.cons} in a row and ${R.sixPerMonth} six-day weeks a month.</span>`;
+  return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${sw?'Check swap':'Check overtime'} · ${DAYN[dow(d)]}, ${fd(d)}</h2>
+  ${sw?`<div class="m" style="margin-bottom:8px">Pick the shift you would give away to see if taking this day still keeps you within your rules.</div><div class="f"><label>Shift I give away</label><select onchange="chkGive=+this.value;keepDraw()"><option value="0">None (just take this day)</option>${mine.map(x=>`<option value="${x}" ${x==chkGive?'selected':''}>${DOW[dow(x)]} ${fd(x)} · ${S[x].s}–${S[x].e}</option>`).join('')}</select></div>`
+  :`<div class="m" style="margin-bottom:8px">Overtime counts toward your weekly and consecutive-day limits, so it has to pass the same checks as a normal shift.</div>`}
+  <div class="card" style="margin-top:10px">${res}</div>
+  ${sw?'<button class="btn" onclick="logSwap()">Log this swap</button>':'<button class="btn" style="background:#e0489b" onclick="openOT(sel)">Add as overtime</button>'}
+  <button class="btn" style="background:#8a97b8" onclick="closeM()">Close</button></div></div>`}
+function openChk(m){chkMode=m;chkGive=0;modal='chk';warn=false;dl=false;draw()}
+function logSwap(){swPre={give:chkGive,take:sel};swId=null;modal='sw';warn=false;dl=false;draw()}
+function openOT(d){preSt='OT';editing=null;modal=true;warn=false;dl=false;draw()}
 // ---------- daily breaks ----------
 // Tick a break after taking it. Each calendar day has its own ticks, so a new day always starts empty.
 // Stored on this device only (localStorage 'sc-breaks': {dayNumber: bitmask}); days older than 60 days are dropped.
@@ -102,7 +123,7 @@ function chk(){const d=fromIso(document.getElementById('cd').value);if(isNaN(d))
   const e=off(d)?['You are on approved leave that day']:work.includes(d)?['You already work that day']:check(d);
   out=e.length?`<b class="bad">✗ Not safe for ${fd(d)}</b><br>${e.join('<br>')}`:`<b class="ok">✓ ${fd(d)} is safe to take</b>`;draw()}
 function leave(){const L=[...leaves].sort((a,b)=>a.d-b.d),H=[...holidays].filter(h=>holState(h)!='off').sort((a,b)=>a.d-b.d),te=toilEarned();
-  return `<div class="dark"><div class="bar"><span></span><span>Leave & TOIL</span><span></span></div><div class="bal">${Object.keys(base).map(k=>`<div><small>${k}</small><b>${fm(rem(k))}</b></div>`).join('')}</div><div class="m" style="color:#9fb0d6">1 day = 7h 48m (468 min). Only Approved requests are deducted.${te?` TOIL includes ${fm(te)} earned on bank holidays.`:''}</div><button class="btn" onclick="openL(null)">Request leave</button></div>
+  return `<div class="dark"><div class="bar"><span></span><span>Leave & TOIL</span><span></span></div><div class="bal">${Object.keys(base).map(k=>`<div><small>${k}</small><b>${fm(rem(k))}</b></div>`).join('')}</div><div class="m" style="color:#9fb0d6">1 day = 7h 48m (468 min). Only Approved requests are deducted.${te?` TOIL includes ${fm(te)} earned on bank holidays.`:''}${etEarned()?` ET includes ${fm(etEarned())} from extra time taken as time.`:''}</div><button class="btn" onclick="openL(null)">Request leave</button></div>
   <div class="page"><h2>Requests</h2>${L.length?L.map(l=>`<div class="card row" onclick="openL(${l.id})" style="cursor:pointer"><div><div class="t">${fd(l.d)} · ${l.type}</div><div class="m">${l.full?'Full day':l.s+'–'+l.e} · ${fm(dur(l))}</div></div><span class="pill st-${l.st}">${lab[l.st]||l.st}</span></div>`).join(''):'<div class="m">No requests yet.</div>'}
   ${H.length?`<h2 style="margin-top:14px">Bank holiday TOIL</h2>${H.map(h=>holRow(h,false)).join('')}`:''}</div>`}
 function lu(){const f=fv('l-f')=='1';document.getElementById('l-tm').style.display=f?'none':'';const m=f?STD:hm(fv('l-b'))-hm(fv('l-a'));
@@ -123,7 +144,7 @@ function leaveHTML(){const l=lvId?leaves.find(x=>x.id==lvId):null,d=l?l.d:sel,sh
   const o=(arr,v)=>arr.map(a=>`<option value="${a[0]}" ${a[0]==v?'selected':''}>${a[1]}</option>`).join('');
   return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${l?'Edit leave · '+fd(l.d):'Request leave'}</h2>
   <div class="two"><div class="f"><label>Date</label><input id="l-d" type="date" value="${iso(d)}" oninput="lu()"></div>
-  <div class="f"><label>Type</label><select id="l-t" onchange="lu()">${o([['PTO','PTO'],['TOIL','TOIL'],['Sick','Sick']],x.type)}</select></div>
+  <div class="f"><label>Type</label><select id="l-t" onchange="lu()">${o([['PTO','PTO'],['TOIL','TOIL'],['ET','ET (extra time)'],['Sick','Sick']],x.type)}</select></div>
   <div class="f"><label>Duration</label><select id="l-f" onchange="lu()">${o([['1','Full day'],['0','Partial (set times)']],x.full?'1':'0')}</select></div>
   <div class="f"><label>Status</label><select id="l-s" ${l?'':'disabled'}>${o([['Review','Under Review'],['Approved','Approved'],['Denied','Denied']],x.st)}</select></div></div>
   <div class="two" id="l-tm"><div class="f"><label>Start</label><input id="l-a" type="time" value="${x.s||'09:00'}" oninput="lu()"></div><div class="f"><label>End</label><input id="l-b" type="time" value="${x.e||'11:00'}" oninput="lu()"></div></div>
@@ -155,7 +176,7 @@ function rules(){const st=(k,l,min,max)=>`<div class="card row"><div class="t">$
   <h2 style="margin-top:14px">Reminders</h2>${notifCard()}${calCard()}
   <h2 style="margin-top:14px">Bank holidays</h2><div class="m" style="margin-bottom:8px">Scheduled to work a bank holiday? You earn 1 TOIL day (7h 48m) once the day arrives. Take a full day of leave (PTO, TOIL or sick) on it and you earn none; partial leave does not count. Add the dates for your region.</div>${[...holidays].sort((a,b)=>a.d-b.d).map(h=>holRow(h,true)).join('')||'<div class="m">No bank holidays added yet.</div>'}
   <div class="two"><button class="btn" onclick="openBH(null)">Add holiday</button><button class="btn" style="background:#8a97b8" onclick="modal='bhm';draw()">Add several</button></div>
-  <h2 style="margin-top:14px">Opening balances</h2><div class="m" style="margin-bottom:8px">Hours:minutes you had before using this app (e.g. 36:12). Approved leave is deducted from these. TOIL earned on the bank holidays below is added automatically, so leave it out of the TOIL figure.</div>${['PTO','TOIL','Sick'].map(k=>`<div class="card row"><div class="t">${k}</div><input style="width:110px;text-align:right" value="${Math.floor(base[k]/60)}:${pad(base[k]%60)}" onchange="setBal('${k}',this.value)"></div>`).join('')}
+  <h2 style="margin-top:14px">Opening balances</h2><div class="m" style="margin-bottom:8px">Hours:minutes you had before using this app (e.g. 36:12). Approved leave is deducted from these. TOIL earned on the bank holidays below, and ET from extra time you log on shifts, are added automatically, so leave them out of these figures.</div>${['PTO','TOIL','ET','Sick'].map(k=>`<div class="card row"><div class="t">${k}</div><input style="width:110px;text-align:right" value="${Math.floor(base[k]/60)}:${pad(base[k]%60)}" onchange="setBal('${k}',this.value)"></div>`).join('')}
   <h2 style="margin-top:14px">Sync</h2><div class="card"><div class="t">${dbOk?'● Saved on this device':'⚠ Not saved: storage unavailable'}</div><div class="m">${dbOk?'Every change is written to this device straight away and works offline.':'This browser is blocking local storage, so changes will be lost when the page reloads.'}</div></div>${syncCard()}
   <h2 style="margin-top:14px">Google Sheets</h2>${sheetsCard()}<h2 style="margin-top:14px">Data</h2><button class="btn" onclick="modal='exp';draw()">Export for payroll (Google Sheets)</button><button class="btn" style="background:#8a97b8" onclick="saveBackup()">Download a backup (JSON)</button><button class="btn" style="background:#8a97b8" onclick="demo()">Load demo data</button><button class="btn" id="clr" style="background:var(--red)" onclick="clr()">Clear all data</button></div>`}
 // ---------- shift type editor ----------
@@ -179,14 +200,15 @@ function saveTy(){const n=fv('t-n').trim(),l=(fv('t-l').trim()||n.slice(0,1)).to
 function delTy(){const b=document.getElementById('tdl');if(!tyDel){tyDel=true;b.textContent='Tap again to confirm. Shifts keep their times and show C.';return}TYPES.splice(tyId,1);pT();closeM()}
 
 // ---------- statistics ----------
-const SC={hrs:'#2a78d6',toil:'#1baf7a',pto:'#4a3aa7',Sick:'#eb6834'};
+const SC={hrs:'#2a78d6',toil:'#1baf7a',pto:'#4a3aa7',Sick:'#eb6834',et:'#c98500',ot:'#e0489b'};
 let stY=_n.getFullYear(),stM=_n.getMonth(),stSel=_n.getMonth();
 const fh=m=>Math.floor(m/60)+'h '+pad(Math.round(m%60))+'m';
-function monthStats(y,m){const a=E(y,m,1),z=E(y,m+1,1)-1,types={};let mins=0,done=0,n=0;
+function monthStats(y,m){const a=E(y,m,1),z=E(y,m+1,1)-1,types={};let mins=0,done=0,n=0,ot=0,otN=0;
   work.forEach(d=>{if(d<a||d>z)return;const s=S[d];if(!s||s.st=='Denied'||off(d))return;
+    if(s.st=='OT'){ot+=Math.max(0,hm(s.e)-hm(s.s));otN++;return}   // overtime is kept apart from regular scheduled time
     let q=hm(s.e)-hm(s.s);leaves.forEach(l=>{if(l.d==d&&!l.full&&l.st!='Denied')q-=dur(l)});q=Math.max(0,q);
     mins+=q;if(d<=TODAY)done+=q;n++;const k=kind(d);types[k]=(types[k]||0)+1});
-  return{mins,done,n,types}}
+  return{mins,done,n,types,ot,otN}}
 function limitStats(y,m){const w=new Set(work.filter(x=>S[x].st!='Denied'&&!off(x))),a=E(y,m,1),z=E(y,m+1,1)-1;let six=0,maxWk=0,best=0,run=0,start=0;
   for(let sat=a+((6-dow(a)+7)%7);sat<=z;sat+=7){let c=0;for(let i=0;i<7;i++)if(w.has(sat-i))c++;maxWk=Math.max(maxWk,c);if(c>=6)six++}
   for(let d=a-14;d<=z+14;d++){if(w.has(d)){if(!run)start=d;run++;if(d>=a&&start<=z&&run>best)best=run}else run=0}
@@ -214,17 +236,18 @@ function keepDraw(){const m=document.getElementById('md'),q=m&&m.scrollTop;draw(
 function stYear(k){stY+=k;stSel=stY==_n.getFullYear()?_n.getMonth():0;keepDraw()}
 function stPick(i){stSel=i;keepDraw()}
 function stMon(k){let m=stM+k,y=stY;if(m<0){m=11;y--}if(m>11){m=0;y++}stM=m;if(y!=stY){stY=y;stSel=y==_n.getFullYear()?_n.getMonth():0}keepDraw()}
-function statsHTML(){const MS=[...Array(12)].map((_,m)=>monthStats(stY,m)),yr=MS.reduce((s,x)=>({mins:s.mins+x.mins,done:s.done+x.done,n:s.n+x.n}),{mins:0,done:0,n:0}),sel=MS[stSel],ML=MON.map(x=>x[0]);
+function statsHTML(){const MS=[...Array(12)].map((_,m)=>monthStats(stY,m)),yr=MS.reduce((s,x)=>({mins:s.mins+x.mins,done:s.done+x.done,n:s.n+x.n,ot:s.ot+x.ot,otN:s.otN+x.otN}),{mins:0,done:0,n:0,ot:0,otN:0}),sel=MS[stSel],ML=MON.map(x=>x[0]);
   const mix={};MS.forEach(x=>Object.keys(x.types).forEach(k=>mix[k]=(mix[k]||0)+x.types[k]));
   const parts=[...TYPES.map(x=>({v:mix[x.l]||0,c:x.c,l:x.n+' ('+x.l+')'})),{v:mix.C||0,c:CUSTOM_C,l:'Custom (C)'}];
   const toilM=[...Array(12)].map((_,m)=>toilMonth(stY,m)),ls=limitStats(stY,stM);
   const tile=(l,v,c)=>`<div class="tile"><small>${l}</small><b style="color:${c||'inherit'}">${v}</b></div>`;
-  const lrow=k=>{const tk=takenYear(k,stY),left=Math.max(0,rem(k)),tot=tk+left,c=k=='PTO'?SC.pto:k=='TOIL'?SC.toil:SC.Sick;
+  const lrow=k=>{const tk=takenYear(k,stY),left=Math.max(0,rem(k)),tot=tk+left,c=k=='PTO'?SC.pto:k=='TOIL'?SC.toil:k=='ET'?SC.et:SC.Sick;
     return `<div class="lim"><div class="row"><span class="t">${k}</span><span class="m">${fh(tk)} taken · ${fh(left)} left</span></div><div class="meter"><i style="background:${c};transform:scaleX(${tot?tk/tot:0})"></i></div></div>`};
   return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod full" id="md"><div class="grab" id="mg"></div>
   <div class="row"><h2 style="margin:0">Statistics</h2><button class="xbtn" aria-label="Close" onclick="closeM()">✕</button></div>
   <div class="yr"><button onclick="stYear(-1)" aria-label="Previous year">‹</button><b>${stY}</b><button onclick="stYear(1)" aria-label="Next year">›</button></div>
   <div class="tiles">${tile('Scheduled',fh(yr.mins),SC.hrs)}${tile('Worked so far',fh(yr.done))}${tile('Shifts',yr.n)}</div>
+  <h3>Overtime &amp; extra time in ${stY}</h3><div class="tiles">${tile('Overtime ('+yr.otN+' days)',fh(yr.ot),SC.ot)}${tile('Extra → ET',fh(exYear(stY,'time')),SC.et)}${tile('Extra → paid',fh(exYear(stY,'money')))}</div>
   <h3>Hours per month</h3><div class="m">Scheduled hours, minus partial leave and approved full-day leave. Tap a bar.</div>
   ${barSvg(MS.map(x=>x.mins/60),ML,{color:SC.hrs,sel:stSel,pick:'stPick',floor:10,fmt:v=>Math.round(v*10)/10+'h',aria:'Scheduled hours per month in '+stY})}
   <div class="readout" aria-live="polite">${MON[stSel]} ${stY} · <b>${fh(sel.mins)}</b> scheduled · ${sel.n} shifts · ${fh(sel.done)} worked so far</div>
@@ -232,7 +255,7 @@ function statsHTML(){const MS=[...Array(12)].map((_,m)=>monthStats(stY,m)),yr=MS
   <h3>TOIL</h3><div class="tiles">${tile('Balance now',fh(Math.max(0,rem('TOIL'))),SC.toil)}${tile('Earned in '+stY,fh(toilM.reduce((a,b)=>a+b,0)))}${tile('Taken in '+stY,fh(takenYear('TOIL',stY)))}</div>
   <div class="m">Hours earned on bank holidays you worked, per month.</div>
   ${toilM.some(x=>x)?barSvg(toilM.map(x=>x/60),ML,{color:SC.toil,sel:-1,pick:'stPick',floor:8,fmt:v=>Math.round(v*10)/10+'h',aria:'TOIL hours earned per month in '+stY}):'<div class="readout">No TOIL earned in '+stY+' yet.</div>'}
-  <h3>Leave taken in ${stY}</h3>${['PTO','TOIL','Sick'].map(lrow).join('')}
+  <h3>Leave taken in ${stY}</h3>${['PTO','TOIL','ET','Sick'].map(lrow).join('')}
   <h3>Statutory limits</h3><div class="yr"><button onclick="stMon(-1)" aria-label="Previous month">‹</button><b>${MON[stM]} ${stY}</b><button onclick="stMon(1)" aria-label="Next month">›</button></div>
   ${limRow('Six-day weeks',ls.six,R.sixPerMonth,'allowed this month')}${limRow('Busiest week',ls.maxWk,R.week,'workdays allowed per week')}${limRow('Longest run',ls.best,R.cons,'days in a row allowed')}
   <details class="tbl"><summary>View data as a table</summary><table><tr><th>Month</th><th>Hours</th><th>Shifts</th><th>TOIL</th></tr>${MS.map((x,m)=>`<tr><td>${MON[m]}</td><td>${fh(x.mins)}</td><td>${x.n}</td><td>${toilM[m]?fh(toilM[m]):'–'}</td></tr>`).join('')}</table></details>
@@ -264,30 +287,35 @@ function wire(){const sh=document.getElementById('sh');
     drag(document.getElementById('gr'),sh,{base:()=>col?off():0,max:off,end:(dy,mv)=>{const o=col;col=mv<4?!col:col?!(dy<-60):dy>60;if(o!=col)draw();else pos()}})}
   const md=document.getElementById('md');
   if(md)drag(document.getElementById('mg'),md,{base:()=>0,max:()=>md.offsetHeight,end:(dy,mv,cur)=>cur>110?closeM():md.style.transform='translateY(0)'})}
-function closeM(){const md=document.getElementById('md'),ov=md&&md.parentNode,fb=document.querySelector('.fab');if(fb)fb.classList.remove('x');if(md){md.style.transition='transform .3s cubic-bezier(.6,-.28,.735,.045)';md.style.transform='translateY(100%)'}if(ov){ov.style.transition='opacity .3s ease';ov.style.opacity='0'}setTimeout(()=>{modal=false;warn=false;editing=null;dl=false;imp=null;impDone='';lvId=null;swId=null;bhId=null;tyId=null;draw()},300)}
+function closeM(){const md=document.getElementById('md'),ov=md&&md.parentNode,fb=document.querySelector('.fab');if(fb)fb.classList.remove('x');if(md){md.style.transition='transform .3s cubic-bezier(.6,-.28,.735,.045)';md.style.transform='translateY(100%)'}if(ov){ov.style.transition='opacity .3s ease';ov.style.opacity='0'}setTimeout(()=>{modal=false;warn=false;editing=null;dl=false;imp=null;impDone='';lvId=null;swId=null;bhId=null;tyId=null;preSt=null;chkGive=0;swPre={};draw()},300)}
 const fv=i=>document.getElementById(i).value,wn=t=>{document.getElementById('wn').textContent=t};
 function save(){const ed=editing,d=ed||fromIso(fv('f-d')),a=fv('f-a'),b=fv('f-b');
   if(isNaN(d)||!a||!b||b<=a)return wn('Pick a date and an end time after the start.');
   if(!ed&&work.includes(d))return wn('A shift already exists on '+fd(d)+'. Tap that date and use Edit.');
+  const xv=parseX(fv('f-x')),xr=fv('f-r');
+  if(isNaN(xv)||xv>720)return wn('Extra time: use hours:minutes, like 0:30.');
+  if(xv>0&&!xr)return wn('Choose how the extra time is reimbursed: time or money.');
   const e=ed?[]:check(d).concat(off(d)?['You have approved full-day leave on this day']:[]);
   if(e.length&&!warn){warn=true;document.getElementById('sv').textContent='Save anyway';return wn('⚠ '+e.join(' · '))}
   if(!ed){work.push(d);work.sort((x,y)=>x-y)}
-  S[d]={...(S[d]||{f:''}),s:a,e:b,st:fv('f-s')};pS(d);goto(d);col=false;showOk('Shift saved');closeM()}
+  S[d]={...(S[d]||{f:''}),s:a,e:b,st:fv('f-s')};if(xv>0){S[d].x=xv;S[d].xr=xr}else{delete S[d].x;delete S[d].xr}pS(d);goto(d);col=false;showOk('Shift saved');closeM()}
 function delShift(){const b=document.getElementById('dl');
   if(!dl){dl=true;b.textContent='Tap again to confirm delete';return}
   xS(editing);delete S[editing];work.splice(work.indexOf(editing),1);closeM()}
 const typeNow=(s,e)=>TYPES.find(x=>x.s==s&&x.e==e);
 function syncQp(){const a=document.getElementById('f-a'),b=document.getElementById('f-b');if(!a||!b)return;const c=typeNow(a.value,b.value);document.querySelectorAll('#qp button').forEach(x=>x.classList.toggle('on',!!c&&x.dataset.id==c.id))}
 function qp(id){const x=TYPES.find(y=>y.id==id);if(!x)return;document.getElementById('f-a').value=x.s;document.getElementById('f-b').value=x.e;syncQp()}
-function modalHTML(){const ed=editing,d0=TYPES[0]||{s:'08:00',e:'16:00'},x=ed?S[ed]:{s:d0.s,e:d0.e,st:'Scheduled',p:0},dv=ed||sel,cur=typeNow(x.s,x.e);
-  const opts=[['Scheduled','Scheduled'],['Planned','Planned'],['Review','Under Review'],['Approved','Approved']].map(o=>`<option value="${o[0]}" ${o[0]==x.st?'selected':''}>${o[1]}</option>`).join('');
+function modalHTML(){const ed=editing,d0=TYPES[0]||{s:'08:00',e:'16:00'},x=ed?S[ed]:{s:d0.s,e:d0.e,st:preSt||'Scheduled',p:0},dv=ed||sel,cur=typeNow(x.s,x.e);
+  const opts=[['Scheduled','Scheduled'],['Planned','Planned'],['Review','Under Review'],['Approved','Approved'],['OT','Overtime (extra day)']].map(o=>`<option value="${o[0]}" ${o[0]==x.st?'selected':''}>${o[1]}</option>`).join('');
   return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod pad" id="md"><div class="grab" id="mg"></div><h2>${ed?'Edit shift · '+fd(ed):'Add shift'}</h2>
   <div class="qp" id="qp">${TYPES.map(y=>`<button type="button" data-id="${y.id}" class="${cur&&cur.id==y.id?'on':''}" style="--c:${y.c}" onclick="qp('${y.id}')">${esc(y.l)} · ${esc(y.n)}<small>${y.s}–${y.e}</small></button>`).join('')}</div><div class="two"><div class="f"><label>Date</label><input id="f-d" type="date" value="${iso(dv)}" ${ed?'disabled':''}></div>
   <div class="f"><label>Status</label><select id="f-s">${opts}</select></div>
-  <div class="f"><label>Start</label><input id="f-a" type="time" value="${x.s}" oninput="syncQp()"></div><div class="f"><label>End</label><input id="f-b" type="time" value="${x.e}" oninput="syncQp()"></div></div>
+  <div class="f"><label>Start</label><input id="f-a" type="time" value="${x.s}" oninput="syncQp()"></div><div class="f"><label>End</label><input id="f-b" type="time" value="${x.e}" oninput="syncQp()"></div>
+  <div class="f"><label>Extra time after shift (h:mm)</label><input id="f-x" inputmode="numeric" placeholder="0:30" value="${x.x>0?Math.floor(x.x/60)+':'+pad(x.x%60):''}"></div>
+  <div class="f"><label>Reimbursed as</label><select id="f-r"><option value="">Choose…</option><option value="time" ${x.xr=='time'?'selected':''}>Time (adds to ET balance)</option><option value="money" ${x.xr=='money'?'selected':''}>Money (paid)</option></select></div></div>
   <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" id="sv" onclick="save()">${ed?'Save changes':'Save shift'}</button>${ed?'<button class="btn" id="dl" style="background:var(--red)" onclick="delShift()">Delete shift</button>':''}</div></div>`}
 const EX='Date,Start Time,End Time,Status\n2026-10-03,08:50,16:38,Scheduled\n2026-10-07,09:22,17:10,Planned\n2026-10-05,08:50,16:38,Scheduled\n2026-11-02,08:50,16:38,Scheduled';
-const SM={scheduled:'Scheduled',planned:'Planned',review:'Review',underreview:'Review',approved:'Approved',completed:'Approved'};
+const SM={scheduled:'Scheduled',planned:'Planned',review:'Review',underreview:'Review',approved:'Approved',completed:'Approved',overtime:'OT',ot:'OT'};
 const esc=t=>String(t).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])),pad=n=>String(n).padStart(2,'0'),tm=n=>pad(Math.floor(n/60))+':'+pad(n%60);
 const pick=(o,k)=>{const key=Object.keys(o).find(x=>x.toLowerCase().replace(/[^a-z]/g,'').startsWith(k));return key===undefined?'':o[key]};
 function csv(t){const L=t.trim().split(/\r?\n/).filter(x=>x.trim());if(L.length<2)return[];const dl=[',',';','\t'].sort((a,b)=>L[0].split(b).length-L[0].split(a).length)[0];const sp=l=>l.split(dl).map(c=>c.trim().replace(/^"|"$/g,''));const H=sp(L[0]);return L.slice(1).map(l=>{const c=sp(l),o={};H.forEach((h,i)=>o[h]=c[i]??'');return o})}
@@ -314,7 +342,7 @@ function doImport(){let a=0,rp=0;imp.forEach(r=>{if(r.err||(r.kind=='conflict'&&
 // ---------- import template ----------
 const TPL_INFO=[['Shift Companion schedule template'],[],['Fill in the Schedule sheet (one row per shift), save the file, then import it from Schedule > Import.'],[],
   ['Date','YYYY-MM-DD or DD/MM/YYYY. A normal Excel date also works.'],['Start Time','24-hour time, e.g. 08:50'],['End Time','24-hour time, later than the start (shifts cannot cross midnight yet)'],
-  ['Status','Optional. Scheduled (default), Planned, Under Review or Approved'],[],
+  ['Status','Optional. Scheduled (default), Planned, Under Review, Approved or Overtime'],[],
   ['One shift per date. If a date already exists in the app you choose Keep existing or Replace in the preview, and nothing is saved until you confirm.'],
   ['Leave, partial time off and swaps are not part of this file. Use the Leave and Swaps tabs.'],['The three example rows are only examples: change or delete them.']];
 const tplRows=()=>[[TODAY+1,'08:50','16:38','Scheduled'],[TODAY+2,'09:22','17:10','Scheduled'],[TODAY+3,'08:50','16:38','Planned']];
@@ -344,7 +372,7 @@ const SWST=[['Planned','Planned'],['Review','Under Review'],['Approved','Approve
 const swapTitle=w=>w.give&&w.take?`Give ${fd(w.give)} ⇄ Take ${fd(w.take)}`:w.give?`Give away ${fd(w.give)}`:`Take ${fd(w.take)}`;
 const swapText=w=>swapTitle(w)+(w.who?' with '+w.who:'');
 const fuOpen=w=>w.fu&&(w.st=='Planned'||w.st=='Review');
-function swapHTML(){const w=swId?swapLog.find(x=>x.id==swId):null,x=w||{give:0,take:0,who:'',st:'Planned',fu:0,note:''},dv=v=>v?iso(v):'';
+function swapHTML(){const w=swId?swapLog.find(x=>x.id==swId):null,x=w||{give:swPre.give||0,take:swPre.take||0,who:'',st:'Planned',fu:0,note:''},dv=v=>v?iso(v):'';
   return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${w?'Edit swap':'Log a swap'}</h2>
   <div class="two"><div class="f"><label>I give away</label><input id="w-g" type="date" value="${dv(x.give)}" onchange="wr()"></div><div class="f"><label>I take</label><input id="w-t" type="date" value="${dv(x.take)}" onchange="wr()"></div>
   <div class="f"><label>With</label><input id="w-w" value="${esc(x.who||'')}" placeholder="Colleague name"></div><div class="f"><label>Status</label><select id="w-s">${SWST.map(o=>`<option value="${o[0]}" ${o[0]==x.st?'selected':''}>${o[1]}</option>`).join('')}</select></div>
@@ -391,10 +419,10 @@ function fxOf(){let f='';if(pTab!==null){if(modal&&!pModal)f='modal';else if(!mo
 function draw(){try{drawNow()}catch(e){crash(e)}}
 function drawNow(){const v=[sched,swaps,leave,rules][tab]();const fx=fxOf(),ap=document.getElementById('app');if(ap.dataset)ap.dataset.fx=fx;
   const sv=['.page','.sheet','#md'].map(q=>{const e=ap.querySelector(q);return e?e.scrollTop:0});
-  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal?modalHTML():'');if(fx!=='tr'&&fx!=='tl'){const q=ap.querySelector('.page'),w=ap.querySelector('.sheet'),m=ap.querySelector('#md');if(q)q.scrollTop=sv[0];if(w&&fx!=='day')w.scrollTop=sv[1];if(m&&fx!=='modal')m.scrollTop=sv[2]}
+  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal=='chk'?chkHTML():modal?modalHTML():'');if(fx!=='tr'&&fx!=='tl'){const q=ap.querySelector('.page'),w=ap.querySelector('.sheet'),m=ap.querySelector('#md');if(q)q.scrollTop=sv[0];if(w&&fx!=='day')w.scrollTop=sv[1];if(m&&fx!=='modal')m.scrollTop=sv[2]}
   wire();if(modal=='lv')lu();if(!dbOk&&!document.getElementById('wbar')){const w=document.createElement('div');w.id='wbar';w.className='wbar';w.textContent='Storage unavailable: changes will not be saved. Close other copies of the app and reload.';ap.appendChild(w)}}
 function tsv(){const it=[];
-  work.forEach(d=>{const x=S[d];it.push([d,0,'Shift','',x.s,x.e,hm(x.e)-hm(x.s),lab[x.st]||x.st,x.f||'']) });
+  work.forEach(d=>{const x=S[d];it.push([d,0,isOT(d)?'Overtime':'Shift','',x.s,x.e,hm(x.e)-hm(x.s),lab[x.st]||x.st,x.f||'']);if(exMin(d))it.push([d,0.5,'Extra time',x.xr=='time'?'Time (ET)':'Money','','',exMin(d),'Reimbursed as '+(x.xr=='time'?'time':'money'),''])});
   leaves.forEach(l=>it.push([l.d,1,'Leave',l.type,l.full?'':l.s,l.full?'':l.e,dur(l),lab[l.st]||l.st,l.full?'Full day':'Partial']));
   it.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
   const rows=[['Date','Weekday','Kind','Leave type','Start','End','Minutes','Status','Note'],...it.map(r=>[iso(r[0]),DAYN[dow(r[0])],...r.slice(2)])];

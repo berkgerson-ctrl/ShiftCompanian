@@ -80,7 +80,7 @@ const appSrc = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8').replace('re
 async function device(name, preset) {
   const idb = preset || makeIdb(), ls = makeLs();
   globalThis.indexedDB = idb; globalThis.localStorage = ls;
-  const app = new Function(appSrc + `;return {kind,fullLv,getTypes:()=>TYPES,setTypes:v=>{TYPES=v},pT,monthStats,limitStats,takenYear,toilMonth,S,work,leaves:()=>leaves,setLeaves:v=>{leaves=v},R,base,pS,xS,pL,pM,pB,O,ready,holidays:()=>holidays,setHolidays:v=>{holidays=v},swapLog:()=>swapLog,setSwaps:v=>{swapLog=v},pH,xH,pW,xW,holState,toilEarned,rem,setToday:v=>{TODAY=v},evList,armNotifs,icsText,NS,getTimers:()=>timers,csv,tplCsv,tplWorkbook,build,getImp:()=>imp}`)();
+  const app = new Function(appSrc + `;return {kind,fullLv,getTypes:()=>TYPES,setTypes:v=>{TYPES=v},pT,monthStats,limitStats,takenYear,toilMonth,S,work,leaves:()=>leaves,setLeaves:v=>{leaves=v},R,base,pS,xS,pL,pM,pB,O,ready,holidays:()=>holidays,setHolidays:v=>{holidays=v},swapLog:()=>swapLog,setSwaps:v=>{swapLog=v},pH,xH,pW,xW,holState,toilEarned,rem,setToday:v=>{TODAY=v},evList,armNotifs,tgB,bkMask,bkCount,BREAKS,BK,isOT,exMin,etEarned,parseX,check,tsv,used,icsText,NS,getTimers:()=>timers,csv,tplCsv,tplWorkbook,build,getImp:()=>imp}`)();
   await app.ready;
   win.redraw = () => {};
   const dev = { name, idb, ls, app, api: win.syncApi };
@@ -331,6 +331,61 @@ legacy('users/u7/shifts/' + (O + 1), { d: O + 1, e: '14:48', st: 'Scheduled', f:
 const Z = await device('Z'); await Z.run();
 assert.equal(Z.app.work.length, 0); assert.equal(globalThis.__cloud.docs.get('users/u7/shifts/' + (O + 1)).sv, undefined);
 ok('a start time lost for good is skipped, not invented and not re-uploaded');
+
+
+// 14. daily breaks: six boxes, ticked per day, a new day starts empty
+globalThis.__user = { email: 'b@example.com', uid: 'u8' };
+const K = await device('K'); K.use(); const b = K.app;
+assert.equal(b.BREAKS, 6); assert.equal(b.bkCount(b.bkMask(O + 1)), 0);
+b.tgB(O + 1, 0); b.tgB(O + 1, 3); b.tgB(O + 1, 5);
+assert.equal(b.bkCount(b.bkMask(O + 1)), 3); assert.equal(b.bkCount(b.bkMask(O + 2)), 0);
+b.tgB(O + 1, 3); assert.equal(b.bkCount(b.bkMask(O + 1)), 2);
+for (let i = 0; i < 6; i++) if (!(b.bkMask(O + 1) >> i & 1)) b.tgB(O + 1, i);
+assert.equal(b.bkCount(b.bkMask(O + 1)), 6);
+for (let i = 0; i < 6; i++) b.tgB(O + 1, i);
+assert.equal(b.bkMask(O + 1), 0); assert.equal(Object.keys(b.BK.get()).length, 0);
+ok('breaks: 6 boxes per day, each day separate, unticking works, a fresh day is empty');
+
+
+// 15. extra time (ET) and overtime (OT)
+globalThis.__user = { email: 'e@example.com', uid: 'u9' };
+const EA = await device('EA'), EB = await device('EB'); EA.use(); const q = EA.app;
+assert.equal(q.parseX('0:30'), 30); assert.equal(q.parseX('1:05'), 65); assert.equal(q.parseX('45'), 45); assert.equal(q.parseX(''), 0);
+assert.ok(isNaN(q.parseX('abc'))); assert.ok(isNaN(q.parseX('1:75'))); ok('extra time input: h:mm, plain minutes, blank and nonsense');
+q.setToday(O + 20); q.base.ET = 0;
+EA.addShift(3); q.S[O + 3].x = 30; q.S[O + 3].xr = 'time'; q.pS(O + 3);
+EA.addShift(4); q.S[O + 4].x = 45; q.S[O + 4].xr = 'money'; q.pS(O + 4);
+EA.addShift(25); q.S[O + 25].x = 60; q.S[O + 25].xr = 'time'; q.pS(O + 25);
+assert.equal(q.etEarned(), 30); assert.equal(q.rem('ET'), 30);
+ok('extra time taken as time adds to the ET balance; money and future days do not');
+q.setLeaves([{ id: 901, d: O + 8, type: 'ET', full: false, s: '09:00', e: '09:20', st: 'Approved' }]);
+assert.equal(q.rem('ET'), 10); q.setLeaves([{ id: 901, d: O + 8, type: 'ET', full: false, s: '09:00', e: '09:20', st: 'Review' }]); assert.equal(q.rem('ET'), 30);
+ok('an approved ET leave request is deducted from the ET balance; under review is not');
+q.setToday(O + 30); assert.equal(q.etEarned(), 90); ok('a future extra-time entry counts once its day arrives');
+q.setToday(O + 20); q.setLeaves([]);
+await EA.run(); await EB.run();
+assert.equal(EB.app.S[O + 3].x, 30); assert.equal(EB.app.S[O + 3].xr, 'time'); assert.equal(EB.app.S[O + 4].xr, 'money');
+ok('extra time and its reimbursement choice sync to another device');
+// removing the extra time clears it everywhere
+EA.use(); delete q.S[O + 3].x; delete q.S[O + 3].xr; q.pS(O + 3); await sleep(5); await EA.run(); await EB.run();
+assert.equal(EB.app.S[O + 3].x, undefined); ok('clearing extra time on one device clears it on the other');
+// overtime
+EA.use(); const r0 = q.R.week;
+EA.addShift(12, 'OT'); EA.addShift(2);
+assert.equal(q.isOT(O + 12), true); assert.equal(q.kind(O + 12), 'OT'); assert.equal(q.isOT(O + 2), false);
+const otm = q.monthStats(2026, 9); // October
+assert.equal(otm.otN, 1); assert.equal(otm.ot, 7 * 60 + 48); assert.ok(!otm.types.OT);
+assert.equal(otm.n, 4, 'OT shift is not in the regular shift count');   // days 2, 3, 4 and 25
+ok('overtime is counted apart from regular scheduled time and shift mix');
+// overtime counts toward the rules: week of Sun 11 Oct holds the OT day (12th) and a shift on the 13th
+EA.addShift(13); q.R.week = 2;
+assert.ok(q.check(O + 14).some(m => /workdays/.test(m)), 'third day in the week is refused because the OT day counts');
+q.delShift = null; q.R.week = r0; assert.deepEqual(q.check(O + 14).filter(m => /workdays/.test(m)), []);
+ok('an overtime day counts toward the weekly limit, so a risky extra day is flagged');
+q.setHolidays([{ d: O + 12, name: 'BH' }]); q.setToday(O + 20);
+assert.equal(q.holState(q.holidays()[0]), 'off'); ok('an overtime day on a bank holiday earns no company TOIL day');
+const rows = q.tsv(); assert.ok(rows.includes('Overtime')); assert.ok(rows.includes('Extra time'));
+ok('payroll export lists overtime days and extra-time rows with how they are reimbursed');
 
 console.log('\nAll ' + n + ' sync checks passed.');
 fs.rmSync(tmp, { recursive: true, force: true });
