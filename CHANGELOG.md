@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+- **KPIs.** Statistics now has two tabs: *Schedule* and *KPIs*. Add KPIs with a name, unit (%, number, minutes, score), direction (higher or lower is better) and target. Enter values per week, month or year, each with the total number of cases behind it (no case numbers are stored). Every KPI shows week-by-week and month-by-month trend charts with the target line, a cases-per-period bar chart, a year-by-year list and an all-entries table. Points are filled when on target, amber when within 5%, hollow red when off target. KPIs sync with your Google sign-in and are included in the backup file. *Clear all data* also clears KPIs; *Load demo data* does not touch them.
+- Fixed: the 1.5.0 zip contained an empty package.json.
+- Service worker cache `sc-v12`. Tests: 61 checks.
+
 ## 1.5.0
 
 - **Extra time (ET).** Add "Extra time after shift" to any shift and choose how it is reimbursed: *Time* (added to a new **ET** balance) or *Money* (paid, tracked for payroll). ET is also a leave type, so approved ET requests are deducted from the balance. ET counts once its day arrives. Opening ET balance is on Rules.

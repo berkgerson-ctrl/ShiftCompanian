@@ -179,3 +179,16 @@ html,body{overscroll-behavior-y:contain}
 .grid:not(.big) .d .tg{position:absolute;top:2px;right:4px;font-style:normal;font-size:8px;font-weight:800;line-height:1;color:#fff;opacity:.85;letter-spacing:.2px}
 .d u.xt{position:absolute;top:3px;left:5px;width:6px;height:6px;border-radius:50%;background:#c98500;text-decoration:none}
 .lg{font-size:9.5px;padding:6px 0 0}
+
+/* KPIs */
+.seg{display:flex;background:#eaf0fb;border-radius:12px;padding:3px;margin:8px 0}
+.seg button{flex:1;border:0;background:none;border-radius:10px;padding:8px 0;font-size:14px;font-weight:600;color:var(--mute);cursor:pointer}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 4px #0c1b3d22}
+.kchips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.kchip{background:#fff;border-radius:10px;padding:8px;position:relative;border:2px solid transparent}
+.kchip small{display:block;font-size:10px;color:var(--mute)}.kchip b{font-size:14px}
+.kchip em{position:absolute;top:6px;right:8px;font-style:normal;font-weight:800;font-size:13px}
+.kchip.ok{border-color:#1fb67a55}.kchip.ok em,.kst.ok{color:#128a5a}
+.kchip.near{border-color:#e9a23b88}.kchip.near em,.kst.near{color:#a8650c}
+.kchip.miss{border-color:#e5484d66}.kchip.miss em,.kst.miss{color:#c42b30}
+.kst{font-weight:700;font-size:12px}

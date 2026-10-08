@@ -80,7 +80,7 @@ const appSrc = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8').replace('re
 async function device(name, preset) {
   const idb = preset || makeIdb(), ls = makeLs();
   globalThis.indexedDB = idb; globalThis.localStorage = ls;
-  const app = new Function(appSrc + `;return {kind,fullLv,getTypes:()=>TYPES,setTypes:v=>{TYPES=v},pT,monthStats,limitStats,takenYear,toilMonth,S,work,leaves:()=>leaves,setLeaves:v=>{leaves=v},R,base,pS,xS,pL,pM,pB,O,ready,holidays:()=>holidays,setHolidays:v=>{holidays=v},swapLog:()=>swapLog,setSwaps:v=>{swapLog=v},pH,xH,pW,xW,holState,toilEarned,rem,setToday:v=>{TODAY=v},evList,armNotifs,tgB,bkMask,bkCount,BREAKS,BK,isOT,exMin,etEarned,parseX,check,tsv,used,icsText,NS,getTimers:()=>timers,csv,tplCsv,tplWorkbook,build,getImp:()=>imp}`)();
+  const app = new Function(appSrc + `;return {kind,fullLv,getTypes:()=>TYPES,setTypes:v=>{TYPES=v},pT,monthStats,limitStats,takenYear,toilMonth,S,work,leaves:()=>leaves,setLeaves:v=>{leaves=v},R,base,pS,xS,pL,pM,pB,O,ready,holidays:()=>holidays,setHolidays:v=>{holidays=v},swapLog:()=>swapLog,setSwaps:v=>{swapLog=v},pH,xH,pW,xW,holState,toilEarned,rem,setToday:v=>{TODAY=v},evList,armNotifs,tgB,bkMask,bkCount,BREAKS,BK,getKP:()=>KP,setKP:v=>{KP=v},pK,kSet,kDelVal,kSt,kKeys,kKey,kLatest,kf,kTgt,wkS,isOT,exMin,etEarned,parseX,check,tsv,used,icsText,NS,getTimers:()=>timers,csv,tplCsv,tplWorkbook,build,getImp:()=>imp}`)();
   await app.ready;
   win.redraw = () => {};
   const dev = { name, idb, ls, app, api: win.syncApi };
@@ -386,6 +386,32 @@ q.setHolidays([{ d: O + 12, name: 'BH' }]); q.setToday(O + 20);
 assert.equal(q.holState(q.holidays()[0]), 'off'); ok('an overtime day on a bank holiday earns no company TOIL day');
 const rows = q.tsv(); assert.ok(rows.includes('Overtime')); assert.ok(rows.includes('Extra time'));
 ok('payroll export lists overtime days and extra-time rows with how they are reimbursed');
+
+
+// 16. KPIs: targets, weekly/monthly/yearly values, status, sync
+globalThis.__user = { email: 'k@example.com', uid: 'u10' };
+const KPA = await device('KPA'), KPB = await device('KPB'); KPA.use(); const kq = KPA.app;
+kq.setToday(O + 10);
+const ksat = { id: 'k1', n: 'Seller satisfaction', unit: '%', dir: 'up', tgt: 90 }, kttr = { id: 'k2', n: 'Time to resolve', unit: 'min', dir: 'down', tgt: 12 };
+kq.setKP({ list: [ksat, kttr], vals: { k1: { w: {}, m: {}, y: {} }, k2: { w: {}, m: {}, y: {} } } });
+assert.equal(kq.kSt(ksat, 91), 'ok'); assert.equal(kq.kSt(ksat, 90), 'ok'); assert.equal(kq.kSt(ksat, 86), 'near'); assert.equal(kq.kSt(ksat, 70), 'miss');
+assert.equal(kq.kSt(kttr, 11), 'ok'); assert.equal(kq.kSt(kttr, 12.5), 'near'); assert.equal(kq.kSt(kttr, 20), 'miss'); assert.equal(kq.kSt(kttr, null), '');
+ok('KPI status respects the direction: higher-is-better and lower-is-better targets');
+assert.equal(kq.kf(ksat, 87.5), '87.5%'); assert.equal(kq.kf(kttr, 12.5), '12.5 min'); assert.equal(kq.kTgt(ksat), 'Target ≥ 90%'); assert.equal(kq.kTgt(kttr), 'Target ≤ 12 min');
+ok('values and targets are shown in their own unit');
+const kwk = kq.kKeys('w', 13), kmo = kq.kKeys('m', 12), kyr = kq.kKeys('y', 5);
+assert.equal(kwk.length, 13); assert.equal(+kwk[12], kq.wkS(O + 10)); assert.equal(+kwk[12] - +kwk[11], 7);
+assert.equal(kmo[11], '2026-10'); assert.equal(kmo[0], '2025-11'); assert.equal(kyr[4], '2026');
+assert.equal(kq.kKey('w', '2026-10-07'), String(kq.wkS(O + 7))); assert.equal(kq.kKey('m', '2026-10'), '2026-10'); assert.equal(kq.kKey('m', 'x'), null);
+ok('week, month and year keys: 13 weeks / 12 months / 5 years ending now; any date maps to its Sunday-start week');
+kq.kSet('k1', 'w', kwk[11], 88, 120); kq.kSet('k1', 'w', kwk[12], 91.5, 140); kq.kSet('k1', 'm', '2026-09', 89, 480); kq.kSet('k1', 'y', '2025', 87, 5200);
+assert.equal(kq.kLatest('k1', 'w').key, kwk[12]); assert.equal(kq.kLatest('k1', 'w').v, 91.5); assert.equal(kq.kLatest('k1', 'm').c, 480); assert.equal(kq.kLatest('k2', 'w'), null);
+kq.kSet('k1', 'w', kwk[12], 92, 150); assert.equal(kq.kLatest('k1', 'w').v, 92); ok('values can be entered per week, month and year, and updated');
+await sleep(5); await KPA.run(); await KPB.run();
+assert.equal(KPB.app.getKP().list.length, 2); assert.equal(KPB.app.kLatest('k1', 'w').v, 92); assert.equal(KPB.app.kLatest('k1', 'y').c, 5200);
+ok('KPIs, targets and values sync to another device');
+KPA.use(); kq.kDelVal('k1', 'w', kwk[12]); await sleep(5); await KPA.run(); await KPB.run();
+assert.equal(KPB.app.kLatest('k1', 'w').v, 88); ok('deleting a value syncs');
 
 console.log('\nAll ' + n + ' sync checks passed.');
 fs.rmSync(tmp, { recursive: true, force: true });

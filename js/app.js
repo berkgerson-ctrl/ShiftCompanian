@@ -87,6 +87,105 @@ function sched(){const s=S[sel];let h=`<div class="top"><div class="bar"><span o
   const H=hol(sel);if(H){const stt=holState(H),p=HL[stt];h+=`<div class="card" style="border-left:4px solid #f2994a;cursor:pointer" onclick="openBH(${H.d})"><div class="row"><div class="t">Bank holiday · ${esc(H.name)}</div>${p[0]?`<span class="pill st-${p[0]}">${p[1]}</span>`:''}</div><div class="m">${holNote(stt)}</div></div>`}
   h+=swapLog.filter(w=>w.give==sel||w.take==sel).map(w=>`<div class="card" style="border-left:4px solid #b58cff;cursor:pointer" onclick="openW(${w.id})"><div class="row"><div class="t">Swap · ${w.give==sel?'giving this day away':'taking this day'}</div><span class="pill st-${w.st}">${lab[w.st]||w.st}</span></div><div class="m">${w.who?(w.give==sel?'To ':'From ')+esc(w.who)+' · ':''}${esc(swapTitle(w))}</div></div>`).join('');
   return h+'</div>'}
+// ---------- KPIs ----------
+// KP = { list:[{id,n,unit,dir,tgt}], vals:{ [id]:{ w:{[sundayDay]:{v,c}}, m:{['2026-10']:{v,c}}, y:{['2026']:{v,c}} } } }
+// v = the KPI value for that period, c = how many cases (surveys etc.) it is based on. No case numbers are stored.
+let KP={list:[],vals:{}};
+const pK=()=>put('meta',{k:'kpis',v:JSON.parse(JSON.stringify(KP)),u:Date.now(),dirty:1});
+const KU={'%':'Percent (%)',num:'Number',min:'Minutes',score:'Score'};
+const kn=v=>String(Math.round(v*100)/100),kf=(k,v)=>v==null?'–':k.unit=='%'?kn(v)+'%':k.unit=='min'?kn(v)+' min':kn(v);
+const kTgt=k=>k.tgt==null?'No target':(k.dir=='up'?'Target ≥ ':'Target ≤ ')+kf(k,k.tgt);
+// status: ok = target met, near = within 5% of target, miss = off target
+const kSt=(k,v)=>{if(v==null||k.tgt==null)return'';const ok=k.dir=='up'?v>=k.tgt:v<=k.tgt;if(ok)return'ok';return Math.abs(v-k.tgt)<=Math.abs(k.tgt)*.05?'near':'miss'};
+const kMark=s=>({ok:'✓',near:'~',miss:'✗','':''})[s];
+const wkS=d=>d-dow(d);                                   // the Sunday that starts d's week
+const kEnt=(id,t,key)=>(KP.vals[id]&&KP.vals[id][t]&&KP.vals[id][t][key])||null;
+function kSet(id,t,key,v,c){const o=KP.vals[id]||(KP.vals[id]={w:{},m:{},y:{}});(o[t]||(o[t]={}))[key]={v,c};pK()}
+function kDelVal(id,t,key){const o=KP.vals[id];if(o&&o[t])delete o[t][key];pK()}
+function kKeys(t,n){const out=[],u=UD(TODAY),y=u.getUTCFullYear(),m=u.getUTCMonth();
+  for(let i=n-1;i>=0;i--){if(t=='w')out.push(String(wkS(TODAY)-7*i));else if(t=='m'){const x=y*12+m-i;out.push(Math.floor(x/12)+'-'+pad(x%12+1))}else out.push(String(y-i))}return out}
+const kLab=(t,key)=>t=='w'?`${UD(+key).getUTCDate()}/${UD(+key).getUTCMonth()+1}`:t=='m'?MON[+key.slice(5)-1]:key;
+const kLong=(t,key)=>t=='w'?'Week of '+fd(+key)+' '+UD(+key).getUTCFullYear():t=='m'?MON[+key.slice(5)-1]+' '+key.slice(0,4):'Year '+key;
+const kLatest=(id,t)=>{const o=(KP.vals[id]||{})[t]||{},ks=Object.keys(o).filter(x=>o[x].v!=null).sort((a,b)=>t=='w'?a-b:a<b?-1:a>b?1:0);return ks.length?{key:ks[ks.length-1],...o[ks[ks.length-1]]}:null};
+let kpId=null,kpeId=null,kpF=null,kpSel={};
+function lineSvg(vals,lab,o){const W=330,H=172,L=40,T=18,B=24,n=vals.length,ih=H-T-B,iw=W-L-6,k=o.k;
+  const nums=vals.filter(v=>v!=null).concat(k.tgt!=null?[k.tgt]:[]);
+  if(!vals.some(v=>v!=null))return '<div class="readout">No values entered for this period yet.</div>';
+  let lo=Math.min(...nums),hi=Math.max(...nums);if(lo==hi){lo-=1;hi+=1}const pd=(hi-lo)*.12,pos=lo>=0;lo-=pd;hi+=pd;const stp=niceStep(hi-lo);lo=Math.floor(lo/stp+1e-9)*stp;hi=Math.ceil(hi/stp-1e-9)*stp;if(pos&&lo<0)lo=0;
+  const X=i=>L+(i+.5)*iw/n,Y=v=>T+ih-(v-lo)/(hi-lo)*ih;let g='',p='',d='',x='';
+  for(let v=lo;v<=hi+1e-9;v+=stp){const y=Y(v);g+=`<line x1="${L}" x2="${W-4}" y1="${y}" y2="${y}" class="gl"/><text x="${L-6}" y="${y+3}" class="ax" text-anchor="end">${kn(v)}</text>`}
+  if(k.tgt!=null){const y=Y(k.tgt);g+=`<line x1="${L}" x2="${W-4}" y1="${y}" y2="${y}" stroke="#6b7a99" stroke-width="1.3" stroke-dasharray="5 4"/><text x="${L+3}" y="${y-4}" class="ax" text-anchor="start">target</text>`}
+  let run=false;vals.forEach((v,i)=>{if(v==null){run=false;return}d+=(run?'L':'M')+X(i)+','+Y(v)+' ';run=true});
+  p+=`<path d="${d}" fill="none" stroke="#2a78d6" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  vals.forEach((v,i)=>{if(v!=null){const s=kSt(k,v),sl=i==o.sel;p+=s=='miss'?`<circle cx="${X(i)}" cy="${Y(v)}" r="${sl?6:4.5}" fill="#fff" stroke="#e5484d" stroke-width="2.2"/>`:`<circle cx="${X(i)}" cy="${Y(v)}" r="${sl?6:4.5}" fill="${s=='near'?'#e9a23b':s=='ok'?'#1fb67a':'#2a78d6'}" stroke="#fff" stroke-width="1.5"/>`;
+    if(sl)p+=`<text x="${X(i)}" y="${Y(v)-10}" class="vl" text-anchor="middle">${esc(kf(k,v))}</text>`}
+    x+=`<text x="${X(i)}" y="${H-6}" class="ax${i==o.sel?' on':''}" text-anchor="middle">${lab[i]}</text><rect x="${X(i)-iw/n/2}" y="${T-8}" width="${iw/n}" height="${ih+B+8}" fill="transparent" onclick="${o.pick}(${i})" style="cursor:pointer"/>`});
+  return `<svg viewBox="0 0 ${W} ${H}" class="bc" role="img" aria-label="${esc(o.aria)}">${g}${p}${x}</svg>`}
+function kChart(k,t,n,title){const keys=kKeys(t,n),vals=keys.map(x=>{const e=kEnt(k.id,t,x);return e?e.v:null}),cs=keys.map(x=>{const e=kEnt(k.id,t,x);return e&&e.c?e.c:0});
+  let sel=kpSel[t];if(sel==null||sel>=n){sel=n-1;for(let i=n-1;i>=0;i--)if(vals[i]!=null){sel=i;break}}
+  const lab=keys.map((x,i)=>t=='w'&&(n-1-i)%2&&i!=sel?'':kLab(t,x));
+  const e=kEnt(k.id,t,keys[sel]),s=e?kSt(k,e.v):'';
+  const read=e?`<b>${kLong(t,keys[sel])}</b> · ${esc(kf(k,e.v))} ${s?`<span class="kst ${s}">${kMark(s)} ${({ok:'on target',near:'close to target',miss:'off target'})[s]}</span>`:''}${e.c!=null?` · ${e.c} cases`:''}`:`<b>${kLong(t,keys[sel])}</b> · no value yet`;
+  return `<h3>${title}</h3>${lineSvg(vals,lab,{k,sel,pick:'kpPick'+t.toUpperCase(),aria:k.n+' '+title})}<div class="readout" aria-live="polite">${read}</div>
+  <div class="m" style="margin-top:8px">Cases behind each ${t=='w'?'week':'month'}</div>${barSvg(cs,lab,{color:'#8a97b8',sel,pick:'kpPick'+t.toUpperCase(),floor:5,fmt:v=>v,aria:'Cases per period'})}`}
+function kpPickW(i){kpSel.w=i;keepDraw()}function kpPickM(i){kpSel.m=i;keepDraw()}
+function kpiTab(){
+  return `<div class="m" style="margin:6px 0 10px">Your KPIs and targets. Update them weekly, monthly or yearly, and see the trend.</div>
+  ${KP.list.map(k=>{const chip=(t,l)=>{const e=kLatest(k.id,t),s=e?kSt(k,e.v):'';return `<div class="kchip ${s}"><small>${l}</small><b>${e?esc(kf(k,e.v)):'–'}</b>${s?`<em>${kMark(s)}</em>`:''}</div>`};
+    return `<div class="card" style="cursor:pointer" onclick="kpOpen('${k.id}')"><div class="row"><div class="t">${esc(k.n)}</div><span class="m">${esc(kTgt(k))}</span></div><div class="kchips">${chip('w','Latest week')}${chip('m','Latest month')}${chip('y','Latest year')}</div></div>`}).join('')||'<div class="card"><div class="t">No KPIs yet</div><div class="m">Add your first KPI, for example "Seller satisfaction", unit %, higher is better, target 90.</div></div>'}
+  <button class="btn" onclick="kpeOpen(null)">Add KPI</button>`}
+function kpOpen(id){kpId=id;kpSel={};kpF=null;modal='kpi';dl=false;draw()}
+function kpBack(){modal='stats';stTab=1;kpId=null;kpeId=null;kpF=null;dl=false;draw()}
+function kDefP(t){return t=='w'?iso(wkS(TODAY)):t=='m'?iso(TODAY).slice(0,7):String(UD(TODAY).getUTCFullYear())}
+function kKey(t,p){if(t=='w'){const d=fromIso(p);return isNaN(d)?null:String(wkS(d))}if(t=='m')return /^\d{4}-\d\d$/.test(p)?p:null;return /^\d{4}$/.test(p)?p:null}
+function kpLoad(){const k=kKey(kpF.t,kpF.p),e=k&&kEnt(kpId,kpF.t,k);kpF.v=e?kn(e.v):'';kpF.c=e&&e.c!=null?String(e.c):''}
+function kpT(t){kpF={t,p:kDefP(t),v:'',c:''};kpLoad();keepDraw()}
+function kpP(v){kpF.p=v;kpLoad();keepDraw()}
+function kpEdit(t,key){kpF={t,p:t=='w'?iso(+key):key,v:'',c:''};kpLoad();keepDraw();const m=document.getElementById('md');if(m)m.scrollTop=0}
+function kpSave(){const k=KP.list.find(x=>x.id==kpId),f=kpF,key=kKey(f.t,f.p),v=parseFloat(String(f.v).replace(',','.')),c=String(f.c).trim()==''?null:parseInt(f.c,10);
+  if(!key)return wn('Pick the period.');if(!isFinite(v))return wn('Enter the value as a number, like 87.5.');
+  if(c!=null&&!(c>=0))return wn('Cases must be a whole number, or leave it empty.');
+  kSet(k.id,f.t,key,v,c);showOk('Saved');keepDraw()}
+function kpDelVal(){const b=document.getElementById('dl'),key=kKey(kpF.t,kpF.p);if(!dl){dl=true;b.textContent='Tap again to confirm delete';return}dl=false;kDelVal(kpId,kpF.t,key);kpF.v='';kpF.c='';keepDraw()}
+function kpiHTML(){const k=KP.list.find(x=>x.id==kpId);if(!k){return `<div class="ov"><div class="mod full" id="md"><div class="grab" id="mg"></div><button class="btn" onclick="kpBack()">Back</button></div></div>`}
+  if(!kpF){kpF={t:'w',p:kDefP('w'),v:'',c:''};kpLoad()}
+  const f=kpF,key=kKey(f.t,f.p),has=!!(key&&kEnt(k.id,f.t,key)),T={w:'Week',m:'Month',y:'Year'};
+  const per=f.t=='w'?`<input type="date" value="${esc(f.p)}" onchange="kpP(this.value)">`:f.t=='m'?`<input type="month" value="${esc(f.p)}" onchange="kpP(this.value)">`:`<input type="number" min="2000" max="2100" value="${esc(f.p)}" onchange="kpP(this.value)">`;
+  const hint=f.t=='w'&&key?`<div class="m">Week of Sun ${fd(+key)} – Sat ${fd(+key+6)}</div>`:'';
+  const all=['w','m','y'].flatMap(t=>Object.keys((KP.vals[k.id]||{})[t]||{}).map(x=>({t,x,e:KP.vals[k.id][t][x]}))).sort((a,b)=>(b.t==a.t?(a.t=='w'?b.x-a.x:b.x<a.x?-1:1):'wmy'.indexOf(a.t)-'wmy'.indexOf(b.t)));
+  const yrs=kKeys('y',5);
+  return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod full" id="md"><div class="grab" id="mg"></div>
+  <div class="row"><button class="xbtn" aria-label="Back" onclick="kpBack()">‹</button><h2 style="margin:0;flex:1;text-align:center;font-size:18px">${esc(k.n)}</h2><button class="xbtn" aria-label="Edit KPI" onclick="kpeOpen('${k.id}')">✎</button></div>
+  <div class="m" style="text-align:center;margin:4px 0 10px">${esc(kTgt(k))} · ${KU[k.unit]} · ${k.dir=='up'?'higher is better':'lower is better'}</div>
+  <div class="card"><div class="t" style="margin-bottom:8px">Add or update a value</div>
+   <div class="seg" role="tablist">${['w','m','y'].map(t=>`<button class="${f.t==t?'on':''}" onclick="kpT('${t}')">${T[t]}</button>`).join('')}</div>
+   <div class="f"><label>${T[f.t]}</label>${per}</div>${hint}
+   <div class="two"><div class="f"><label>Value (${k.unit=='num'||k.unit=='score'?KU[k.unit].toLowerCase():k.unit})</label><input inputmode="decimal" value="${esc(f.v)}" oninput="kpF.v=this.value" placeholder="${k.unit=='%'?'87.5':k.unit=='min'?'12.5':'0'}"></div>
+   <div class="f"><label>Cases (total)</label><input inputmode="numeric" value="${esc(f.c)}" oninput="kpF.c=this.value" placeholder="e.g. 120"></div></div>
+   <div id="wn" class="bad m" style="margin-top:6px;min-height:16px"></div><button class="btn" onclick="kpSave()">${has?'Update value':'Save value'}</button>${has?'<button class="btn" id="dl" style="background:var(--red)" onclick="kpDelVal()">Delete this value</button>':''}</div>
+  ${kChart(k,'w',13,'Week by week')}${kChart(k,'m',12,'Month by month')}
+  <h3>Year by year</h3>${yrs.map(y=>{const e=kEnt(k.id,'y',y),s=e?kSt(k,e.v):'';return `<div class="card row" style="cursor:pointer" onclick="kpEdit('y','${y}')"><div><div class="t">${y}</div><div class="m">${e&&e.c!=null?e.c+' cases':'tap to enter'}</div></div><div class="t">${e?esc(kf(k,e.v)):'–'} ${s?`<span class="kst ${s}">${kMark(s)}</span>`:''}</div></div>`}).join('')}
+  <details class="tbl"><summary>All entries (${all.length})</summary><table><tr><th>Period</th><th>Value</th><th>Cases</th></tr>${all.map(r=>`<tr onclick="kpEdit('${r.t}','${r.x}')" style="cursor:pointer"><td>${kLong(r.t,r.x)}</td><td>${esc(kf(k,r.e.v))} ${kMark(kSt(k,r.e.v))}</td><td>${r.e.c==null?'–':r.e.c}</td></tr>`).join('')}</table></details>
+  </div></div>`}
+function kpeOpen(id){kpeId=id;modal='kpe';dl=false;draw()}
+function kpeHTML(){const k=kpeId?KP.list.find(x=>x.id==kpeId):null,x=k||{n:'',unit:'%',dir:'up',tgt:null};
+  const o=(arr,v)=>arr.map(a=>`<option value="${a[0]}" ${a[0]==v?'selected':''}>${a[1]}</option>`).join('');
+  return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${k?'Edit KPI':'New KPI'}</h2>
+  <div class="f"><label>Name</label><input id="k-n" maxlength="40" value="${esc(x.n)}" placeholder="Seller satisfaction"></div>
+  <div class="two"><div class="f"><label>Unit</label><select id="k-u">${o(Object.keys(KU).map(u=>[u,KU[u]]),x.unit)}</select></div>
+  <div class="f"><label>Better when</label><select id="k-d">${o([['up','Higher is better'],['down','Lower is better']],x.dir)}</select></div></div>
+  <div class="f"><label>Target</label><input id="k-t" inputmode="decimal" value="${x.tgt==null?'':kn(x.tgt)}" placeholder="90"></div>
+  <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" onclick="kpeSave()">Save</button>${k?'<button class="btn" id="dl" style="background:var(--red)" onclick="kpeDel()">Delete KPI and its values</button>':''}
+  <button class="btn" style="background:#8a97b8" onclick="kpeBack()">Cancel</button></div></div>`}
+const kpeBack=()=>{if(kpId&&KP.list.some(x=>x.id==kpId)){modal='kpi';kpeId=null;draw()}else kpBack()};
+function kpeSave(){const n=fv('k-n').trim(),u=fv('k-u'),d=fv('k-d'),ts=fv('k-t').trim(),t=ts==''?null:parseFloat(ts.replace(',','.'));
+  if(!n)return wn('Give the KPI a name.');if(ts!=''&&!isFinite(t))return wn('Target must be a number.');
+  if(KP.list.some(x=>x.id!=kpeId&&x.n.toLowerCase()==n.toLowerCase()))return wn('You already have a KPI with that name.');
+  if(kpeId){Object.assign(KP.list.find(x=>x.id==kpeId),{n,unit:u,dir:d,tgt:t})}else{const id='k'+Date.now().toString(36);KP.list.push({id,n,unit:u,dir:d,tgt:t});KP.vals[id]={w:{},m:{},y:{}};kpId=id}
+  pK();showOk('Saved');kpeBack()}
+function kpeDel(){const b=document.getElementById('dl');if(!dl){dl=true;b.textContent='Tap again to delete this KPI and all its values';return}
+  KP.list=KP.list.filter(x=>x.id!=kpeId);delete KP.vals[kpeId];pK();dl=false;kpId=null;kpBack()}
+
 // ---------- check an off day: swap / overtime ----------
 function chkErrors(){const d=sel;if(off(d))return['You are on approved leave that day'];if(work.includes(d))return['You already work that day'];return check(d,chkMode=='swap'&&chkGive?chkGive:undefined)}
 function chkHTML(){const d=sel,sw=chkMode=='swap',e=chkErrors(),mine=work.filter(x=>Math.abs(x-d)<=14&&S[x].st!='Denied'&&!off(x)).sort((a,b)=>a-b);
@@ -201,7 +300,7 @@ function delTy(){const b=document.getElementById('tdl');if(!tyDel){tyDel=true;b.
 
 // ---------- statistics ----------
 const SC={hrs:'#2a78d6',toil:'#1baf7a',pto:'#4a3aa7',Sick:'#eb6834',et:'#c98500',ot:'#e0489b'};
-let stY=_n.getFullYear(),stM=_n.getMonth(),stSel=_n.getMonth();
+let stY=_n.getFullYear(),stM=_n.getMonth(),stSel=_n.getMonth(),stTab=0;
 const fh=m=>Math.floor(m/60)+'h '+pad(Math.round(m%60))+'m';
 function monthStats(y,m){const a=E(y,m,1),z=E(y,m+1,1)-1,types={};let mins=0,done=0,n=0,ot=0,otN=0;
   work.forEach(d=>{if(d<a||d>z)return;const s=S[d];if(!s||s.st=='Denied'||off(d))return;
@@ -245,7 +344,8 @@ function statsHTML(){const MS=[...Array(12)].map((_,m)=>monthStats(stY,m)),yr=MS
     return `<div class="lim"><div class="row"><span class="t">${k}</span><span class="m">${fh(tk)} taken · ${fh(left)} left</span></div><div class="meter"><i style="background:${c};transform:scaleX(${tot?tk/tot:0})"></i></div></div>`};
   return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod full" id="md"><div class="grab" id="mg"></div>
   <div class="row"><h2 style="margin:0">Statistics</h2><button class="xbtn" aria-label="Close" onclick="closeM()">✕</button></div>
-  <div class="yr"><button onclick="stYear(-1)" aria-label="Previous year">‹</button><b>${stY}</b><button onclick="stYear(1)" aria-label="Next year">›</button></div>
+  <div class="seg" role="tablist"><button class="${stTab==0?'on':''}" onclick="stTab=0;keepDraw()">Schedule</button><button class="${stTab==1?'on':''}" onclick="stTab=1;keepDraw()">KPIs</button></div>
+  ${stTab==1?kpiTab():`<div class="yr"><button onclick="stYear(-1)" aria-label="Previous year">‹</button><b>${stY}</b><button onclick="stYear(1)" aria-label="Next year">›</button></div>
   <div class="tiles">${tile('Scheduled',fh(yr.mins),SC.hrs)}${tile('Worked so far',fh(yr.done))}${tile('Shifts',yr.n)}</div>
   <h3>Overtime &amp; extra time in ${stY}</h3><div class="tiles">${tile('Overtime ('+yr.otN+' days)',fh(yr.ot),SC.ot)}${tile('Extra → ET',fh(exYear(stY,'time')),SC.et)}${tile('Extra → paid',fh(exYear(stY,'money')))}</div>
   <h3>Hours per month</h3><div class="m">Scheduled hours, minus partial leave and approved full-day leave. Tap a bar.</div>
@@ -258,7 +358,7 @@ function statsHTML(){const MS=[...Array(12)].map((_,m)=>monthStats(stY,m)),yr=MS
   <h3>Leave taken in ${stY}</h3>${['PTO','TOIL','ET','Sick'].map(lrow).join('')}
   <h3>Statutory limits</h3><div class="yr"><button onclick="stMon(-1)" aria-label="Previous month">‹</button><b>${MON[stM]} ${stY}</b><button onclick="stMon(1)" aria-label="Next month">›</button></div>
   ${limRow('Six-day weeks',ls.six,R.sixPerMonth,'allowed this month')}${limRow('Busiest week',ls.maxWk,R.week,'workdays allowed per week')}${limRow('Longest run',ls.best,R.cons,'days in a row allowed')}
-  <details class="tbl"><summary>View data as a table</summary><table><tr><th>Month</th><th>Hours</th><th>Shifts</th><th>TOIL</th></tr>${MS.map((x,m)=>`<tr><td>${MON[m]}</td><td>${fh(x.mins)}</td><td>${x.n}</td><td>${toilM[m]?fh(toilM[m]):'–'}</td></tr>`).join('')}</table></details>
+  <details class="tbl"><summary>View data as a table</summary><table><tr><th>Month</th><th>Hours</th><th>Shifts</th><th>TOIL</th></tr>${MS.map((x,m)=>`<tr><td>${MON[m]}</td><td>${fh(x.mins)}</td><td>${x.n}</td><td>${toilM[m]?fh(toilM[m]):'–'}</td></tr>`).join('')}</table></details>`}
   </div></div>`}
 
 // ---------- install as an app ----------
@@ -287,7 +387,7 @@ function wire(){const sh=document.getElementById('sh');
     drag(document.getElementById('gr'),sh,{base:()=>col?off():0,max:off,end:(dy,mv)=>{const o=col;col=mv<4?!col:col?!(dy<-60):dy>60;if(o!=col)draw();else pos()}})}
   const md=document.getElementById('md');
   if(md)drag(document.getElementById('mg'),md,{base:()=>0,max:()=>md.offsetHeight,end:(dy,mv,cur)=>cur>110?closeM():md.style.transform='translateY(0)'})}
-function closeM(){const md=document.getElementById('md'),ov=md&&md.parentNode,fb=document.querySelector('.fab');if(fb)fb.classList.remove('x');if(md){md.style.transition='transform .3s cubic-bezier(.6,-.28,.735,.045)';md.style.transform='translateY(100%)'}if(ov){ov.style.transition='opacity .3s ease';ov.style.opacity='0'}setTimeout(()=>{modal=false;warn=false;editing=null;dl=false;imp=null;impDone='';lvId=null;swId=null;bhId=null;tyId=null;preSt=null;chkGive=0;swPre={};draw()},300)}
+function closeM(){const md=document.getElementById('md'),ov=md&&md.parentNode,fb=document.querySelector('.fab');if(fb)fb.classList.remove('x');if(md){md.style.transition='transform .3s cubic-bezier(.6,-.28,.735,.045)';md.style.transform='translateY(100%)'}if(ov){ov.style.transition='opacity .3s ease';ov.style.opacity='0'}setTimeout(()=>{modal=false;warn=false;editing=null;dl=false;imp=null;impDone='';lvId=null;swId=null;bhId=null;tyId=null;preSt=null;chkGive=0;swPre={};kpId=null;kpeId=null;kpF=null;draw()},300)}
 const fv=i=>document.getElementById(i).value,wn=t=>{document.getElementById('wn').textContent=t};
 function save(){const ed=editing,d=ed||fromIso(fv('f-d')),a=fv('f-a'),b=fv('f-b');
   if(isNaN(d)||!a||!b||b<=a)return wn('Pick a date and an end time after the start.');
@@ -419,7 +519,7 @@ function fxOf(){let f='';if(pTab!==null){if(modal&&!pModal)f='modal';else if(!mo
 function draw(){try{drawNow()}catch(e){crash(e)}}
 function drawNow(){const v=[sched,swaps,leave,rules][tab]();const fx=fxOf(),ap=document.getElementById('app');if(ap.dataset)ap.dataset.fx=fx;
   const sv=['.page','.sheet','#md'].map(q=>{const e=ap.querySelector(q);return e?e.scrollTop:0});
-  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal=='chk'?chkHTML():modal?modalHTML():'');if(fx!=='tr'&&fx!=='tl'){const q=ap.querySelector('.page'),w=ap.querySelector('.sheet'),m=ap.querySelector('#md');if(q)q.scrollTop=sv[0];if(w&&fx!=='day')w.scrollTop=sv[1];if(m&&fx!=='modal')m.scrollTop=sv[2]}
+  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal=='chk'?chkHTML():modal=='kpi'?kpiHTML():modal=='kpe'?kpeHTML():modal?modalHTML():'');if(fx!=='tr'&&fx!=='tl'){const q=ap.querySelector('.page'),w=ap.querySelector('.sheet'),m=ap.querySelector('#md');if(q)q.scrollTop=sv[0];if(w&&fx!=='day')w.scrollTop=sv[1];if(m&&fx!=='modal')m.scrollTop=sv[2]}
   wire();if(modal=='lv')lu();if(!dbOk&&!document.getElementById('wbar')){const w=document.createElement('div');w.id='wbar';w.className='wbar';w.textContent='Storage unavailable: changes will not be saved. Close other copies of the app and reload.';ap.appendChild(w)}}
 function tsv(){const it=[];
   work.forEach(d=>{const x=S[d];it.push([d,0,isOT(d)?'Overtime':'Shift','',x.s,x.e,hm(x.e)-hm(x.s),lab[x.st]||x.st,x.f||'']);if(exMin(d))it.push([d,0.5,'Extra time',x.xr=='time'?'Time (ET)':'Money','','',exMin(d),'Reimbursed as '+(x.xr=='time'?'time':'money'),''])});
@@ -455,11 +555,11 @@ const valid=(n,r)=>!!r&&(r.del||(n=='shifts'?okT(r.s)&&okT(r.e):n=='leaves'?!!r.
 let bootErr=null;
 async function boot(){try{db=await dbOpen();dbOk=true}catch(e){dbOk=false;bootErr=e;return}
   try{const[sh,lv,me,ho,sw]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]),m=Object.fromEntries(me.map(x=>[x.k,x.v]));
-  if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);sh.filter(x=>!x.del&&valid('shifts',x)).forEach(x=>{S[x.d]=x;work.push(x.d)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del&&valid('leaves',x));holidays=ho.filter(x=>!x.del);swapLog=sw.filter(x=>!x.del);if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);if(Array.isArray(m.types)&&m.types.length)TYPES=m.types;lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
+  if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);sh.filter(x=>!x.del&&valid('shifts',x)).forEach(x=>{S[x.d]=x;work.push(x.d)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del&&valid('leaves',x));holidays=ho.filter(x=>!x.del);swapLog=sw.filter(x=>!x.del);if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);if(Array.isArray(m.types)&&m.types.length)TYPES=m.types;if(m.kpis&&Array.isArray(m.kpis.list))KP=m.kpis;lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
   else{work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[];put('meta',{k:'seeded',v:1})}}catch(e){bootErr=e}}
 function wipe(){work.forEach(d=>xS(d));leaves.forEach(l=>xL(l.id));holidays.forEach(h=>xH(h.d));swapLog.forEach(w=>xW(w.id));work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[]}
 function demo(){wipe();const D=structuredClone(DEMO);Object.assign(S,D.S);work.push(...D.work);leaves=D.leaves;holidays=D.holidays;swapLog=D.swapLog;work.forEach(pS);leaves.forEach(pL);holidays.forEach(pH);swapLog.forEach(pW);lid=Math.max(lid,5);Object.assign(base,DEMO_BASE);pB();draw()}
-function clr(){const b=document.getElementById('clr');if(!cl){cl=true;b.textContent='Tap again to erase everything (also in the cloud once synced)';return}cl=false;wipe();draw()}
+function clr(){const b=document.getElementById('clr');if(!cl){cl=true;b.textContent='Tap again to erase everything (also in the cloud once synced)';return}cl=false;wipe();KP={list:[],vals:{}};pK();draw()}
 const ready=boot();
 const isBlank=()=>{const a=document.getElementById('app');return !a||!a.children.length||!!a.querySelector('.boot')};
 let crashed=false;
@@ -482,16 +582,16 @@ const putRaw=(n,v)=>new Promise((res,rej)=>{const t=db.transaction(n,'readwrite'
 const keyOf=(n,r)=>n=='shifts'||n=='holidays'?r.d:n=='leaves'||n=='swaps'?r.id:r.k;
 // Bridge used by js/sync.js. Records merge per record: the newest edit time (u) wins.
 window.syncApi={
-  async dirty(){await ready;const[a,b,c,h,w]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]);return{shifts:a.filter(x=>x.dirty&&valid('shifts',x)),leaves:b.filter(x=>x.dirty&&valid('leaves',x)),holidays:h.filter(x=>x.dirty),swaps:w.filter(x=>x.dirty),rules:c.filter(x=>(x.k=='rules'||x.k=='balances'||x.k=='types')&&x.dirty)}},
+  async dirty(){await ready;const[a,b,c,h,w]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]);return{shifts:a.filter(x=>x.dirty&&valid('shifts',x)),leaves:b.filter(x=>x.dirty&&valid('leaves',x)),holidays:h.filter(x=>x.dirty),swaps:w.filter(x=>x.dirty),rules:c.filter(x=>(x.k=='rules'||x.k=='balances'||x.k=='types'||x.k=='kpis')&&x.dirty)}},
   async apply(n,r){await ready;if(!valid(n,r))return;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u>=r.u&&valid(n,cur))return;await putRaw(n,{...r,dirty:0});
     if(n=='shifts'){if(r.del){delete S[r.d];const i=work.indexOf(r.d);if(i>=0)work.splice(i,1)}else{S[r.d]={...r};if(!work.includes(r.d)){work.push(r.d);work.sort((a,b)=>a-b)}}}
     else if(n=='leaves'){leaves=leaves.filter(x=>x.id!=r.id);if(!r.del)leaves.push({...r})}
     else if(n=='holidays'){holidays=holidays.filter(x=>x.d!=r.d);if(!r.del)holidays.push({...r})}
     else if(n=='swaps'){swapLog=swapLog.filter(x=>x.id!=r.id);if(!r.del)swapLog.push({...r})}
-    else if(r.k=='rules')Object.assign(R,r.v);else if(r.k=='balances')Object.assign(base,r.v);else if(r.k=='types'&&Array.isArray(r.v))TYPES=r.v;
+    else if(r.k=='rules')Object.assign(R,r.v);else if(r.k=='balances')Object.assign(base,r.v);else if(r.k=='types'&&Array.isArray(r.v))TYPES=r.v;else if(r.k=='kpis'&&r.v&&Array.isArray(r.v.list))KP=r.v;
     armNotifs();window.redraw()},
   async markAllDirty(){await ready;for(const n of['shifts','leaves','holidays','swaps','meta'])for(const x of await getAll(n)){
-    if(x.dirty||!valid(n,x)||(n=='meta'&&!(x.k=='rules'||x.k=='balances'||x.k=='types')))continue;await putRaw(n,{...x,dirty:1})}},
+    if(x.dirty||!valid(n,x)||(n=='meta'&&!(x.k=='rules'||x.k=='balances'||x.k=='types'||x.k=='kpis')))continue;await putRaw(n,{...x,dirty:1})}},
   async clean(n,r){await ready;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u==r.u)await putRaw(n,{...cur,dirty:0})}
 };
 // ---------- leave-by reminders + calendar file ----------
