@@ -80,7 +80,7 @@ const appSrc = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8').replace('re
 async function device(name, preset) {
   const idb = preset || makeIdb(), ls = makeLs();
   globalThis.indexedDB = idb; globalThis.localStorage = ls;
-  const app = new Function(appSrc + `;return {kind,fullLv,getTypes:()=>TYPES,setTypes:v=>{TYPES=v},pT,monthStats,limitStats,takenYear,toilMonth,S,work,leaves:()=>leaves,setLeaves:v=>{leaves=v},R,base,pS,xS,pL,pM,pB,O,ready,holidays:()=>holidays,setHolidays:v=>{holidays=v},swapLog:()=>swapLog,setSwaps:v=>{swapLog=v},pH,xH,pW,xW,holState,toilEarned,rem,setToday:v=>{TODAY=v},evList,armNotifs,tgB,bkMask,bkCount,BREAKS,BK,getKP:()=>KP,setKP:v=>{KP=v},pK,kSet,kDelVal,kSt,kKeys,kKey,kLatest,kf,kTgt,wkS,isOT,exMin,etEarned,parseX,check,tsv,used,icsText,NS,getTimers:()=>timers,csv,tplCsv,tplWorkbook,build,getImp:()=>imp}`)();
+  const app = new Function(appSrc + `;return {kind,fullLv,getTypes:()=>TYPES,setTypes:v=>{TYPES=v},pT,monthStats,limitStats,takenYear,toilMonth,S,work,leaves:()=>leaves,setLeaves:v=>{leaves=v},R,base,pS,xS,pL,pM,pB,O,ready,holidays:()=>holidays,setHolidays:v=>{holidays=v},swapLog:()=>swapLog,setSwaps:v=>{swapLog=v},pH,xH,pW,xW,holState,toilEarned,rem,setToday:v=>{TODAY=v},evList,armNotifs,tgB,bkMask,bkCount,BREAKS,BK,getKP:()=>KP,setKP:v=>{KP=v},pK,kSet,kDelVal,kSt,kKeys,kKey,kLatest,kf,kTgt,wkS,isOT,exMin,etEarned,parseX,check,tsv,used,icsText,NS,getTimers:()=>timers,csv,tplCsv,tplWorkbook,build,getImp:()=>imp,getLog:()=>LOG,doImport,histUndo,setImpRm:v=>{impRm=v},getImpRm:()=>impRm,logCtx:v=>{logCtx=v},setSrc:v=>{impSrc=v},cnt,histTab,hArm:()=>hArm,xL,xW,setHKind:v=>{hKind=v}}`)();
   await app.ready;
   win.redraw = () => {};
   const dev = { name, idb, ls, app, api: win.syncApi };
@@ -180,7 +180,7 @@ old.stores.shifts.m.set(O + 3, { d: O + 3, s: '07:00', e: '14:48', st: 'Schedule
 old.stores.meta.m.set('seeded', { k: 'seeded', v: 1 });
 globalThis.__user = { email: 'old@example.com', uid: 'u3' };
 const U = await device('U', old);
-assert.ok(U.app.work.includes(O + 3)); assert.ok(old.stores.holidays && old.stores.swaps); assert.equal(old.version, 2);
+assert.ok(U.app.work.includes(O + 3)); assert.ok(old.stores.holidays && old.stores.swaps); assert.equal(old.version, 3);
 ok('upgrading from database v1 keeps shifts and adds the new stores');
 
 // 11. TOIL for bank holidays
@@ -412,6 +412,60 @@ assert.equal(KPB.app.getKP().list.length, 2); assert.equal(KPB.app.kLatest('k1',
 ok('KPIs, targets and values sync to another device');
 KPA.use(); kq.kDelVal('k1', 'w', kwk[12]); await sleep(5); await KPA.run(); await KPB.run();
 assert.equal(KPB.app.kLatest('k1', 'w').v, 88); ok('deleting a value syncs');
+
+// 14. change history: every shift edit is logged, a bulk import shows old -> new, undo restores, log syncs
+const H1 = await device('H1'), H2 = await device('H2'); H1.use(); const h = H1.app, HO = h.O;
+h.setToday(HO + 40);
+H1.addShift(50); H1.addShift(51); H1.addShift(52);
+assert.equal(h.getLog().length, 3); assert.ok(h.getLog().every(r => r.a === 'add' && r.src === 'manual' && !r.b && r.n.s === '07:00'));
+H1.setShift(50, 'Approved'); const l4 = h.getLog()[3];
+assert.equal(l4.a, 'edit'); assert.equal(l4.b.st, 'Scheduled'); assert.equal(l4.n.st, 'Approved');
+H1.setShift(50, 'Approved'); assert.equal(h.getLog().length, 4);   // saving with no real change adds nothing
+ok('adding and editing shifts is logged with the old value; a no-op save is not');
+// "December" import: 50 changed times, 51 identical, 52 missing from file, 53 new
+const row = (d, s, e, st) => ({ Date: new Date((HO + d) * 864e5).toISOString().slice(0, 10), 'Start Time': s, 'End Time': e, Status: st });
+h.build([row(50, '09:00', '16:48', 'Approved'), row(51, '07:00', '14:48', 'Scheduled'), row(53, '10:00', '17:48', 'Scheduled')]);
+let im = h.getImp();
+assert.deepEqual(im.map(r => r.kind), ['changed', 'same', 'new']); assert.deepEqual(h.getImpRm(), [HO + 52]);
+assert.equal(im[0].old.s, '07:00'); assert.equal(h.cnt(), 3);
+ok('import preview finds changed, unchanged, new and removed days');
+h.setSrc('december.xlsx'); h.doImport();
+assert.equal(h.S[HO + 50].s, '09:00'); assert.ok(!h.S[HO + 52]); assert.equal(h.S[HO + 53].s, '10:00'); assert.equal(h.S[HO + 51].s, '07:00');
+const bl = h.getLog().filter(r => r.src === 'import'); assert.equal(bl.length, 3); assert.equal(new Set(bl.map(r => r.batch)).size, 1); assert.equal(bl[0].label, 'december.xlsx');
+assert.deepEqual(bl.map(r => r.a).sort(), ['add', 'edit', 'remove']);
+assert.equal(bl.find(r => r.a === 'edit').b.s, '07:00');
+ok('applying the import changes the schedule and logs one batch with the old schedule');
+const html = h.histTab(); assert.ok(html.includes('1 changed · 1 added · 1 removed') && html.includes('december.xlsx') && html.includes('07:00'));
+ok('history tab lists the import with before/after');
+await H1.run(); await H2.run();
+assert.equal(H2.app.getLog().length, h.getLog().length); assert.equal(H2.app.S[HO + 50].s, '09:00');
+H2.use(); H2.app.setToday(HO + 40);
+H2.app.histUndo(String(bl[0].batch)); assert.ok(H2.app.hArm() !== null); H2.app.histUndo(String(bl[0].batch));
+assert.equal(H2.app.S[HO + 50].s, '07:00'); assert.equal(H2.app.S[HO + 52].s, '07:00'); assert.ok(!H2.app.S[HO + 53]);
+assert.equal(H2.app.getLog().filter(r => r.src === 'undo').length, 3);
+ok('the history syncs to another device and an import can be undone there (needs a second tap)');
+await H2.run(); await H1.run();
+assert.equal(H1.app.S[HO + 52].s, '07:00'); assert.ok(!H1.app.S[HO + 53]); assert.equal(H1.app.getLog().length, H2.app.getLog().length);
+ok('the undo itself syncs back and is also recorded');
+
+// 15. leave and swap changes are logged and synced too
+const L1 = await device('L1'), L2 = await device('L2'); L1.use(); const q1 = L1.app, QO = q1.O;
+q1.setLeaves([{ id: 901, d: QO + 5, type: 'PTO', full: true, st: 'Review' }]); q1.pL(q1.leaves()[0]);
+q1.leaves()[0].st = 'Approved'; q1.pL(q1.leaves()[0]); q1.pL(q1.leaves()[0]);
+let ll = q1.getLog().filter(r => r.k === 'leave'); assert.deepEqual(ll.map(r => r.a), ['add', 'edit']); assert.equal(ll[1].b.st, 'Review'); assert.equal(ll[1].n.st, 'Approved');
+q1.setSwaps([{ id: 902, give: QO + 3, take: QO + 6, who: 'Sam', st: 'Planned', fu: 0, note: '' }]); q1.pW(q1.swapLog()[0]);
+q1.swapLog()[0].st = 'Done'; q1.pW(q1.swapLog()[0]);
+let sl = q1.getLog().filter(r => r.k === 'swap'); assert.deepEqual(sl.map(r => r.a), ['add', 'edit']); assert.equal(sl[1].b.st, 'Planned');
+ok('leave and swap edits are logged with the old value; unchanged saves are not');
+q1.xL(901); q1.setLeaves([]); q1.xW(902); q1.setSwaps([]);
+assert.deepEqual(q1.getLog().filter(r => r.k === 'leave').map(r => r.a), ['add', 'edit', 'remove']); assert.deepEqual(q1.getLog().filter(r => r.k === 'swap').map(r => r.a), ['add', 'edit', 'remove']);
+assert.equal(q1.getLog().filter(r => r.k === 'leave')[2].b.st, 'Approved');
+ok('deleting a leave request or swap is logged');
+let hh = q1.histTab(); assert.ok(hh.includes('Leave') && hh.includes('Swap') && hh.includes('Sam'));
+q1.setHKind('swap'); hh = q1.histTab(); assert.ok(hh.includes('Swap') && !hh.includes('PTO')); q1.setHKind('');
+ok('history shows leave and swap entries and can filter by kind');
+await L1.run(); await L2.run(); assert.equal(L2.app.getLog().filter(r => r.k === 'leave' || r.k === 'swap').length, 6);
+ok('leave and swap history syncs to another device');
 
 console.log('\nAll ' + n + ' sync checks passed.');
 fs.rmSync(tmp, { recursive: true, force: true });

@@ -192,3 +192,11 @@ html,body{overscroll-behavior-y:contain}
 .kchip.near{border-color:#e9a23b88}.kchip.near em,.kst.near{color:#a8650c}
 .kchip.miss{border-color:#e5484d66}.kchip.miss em,.kst.miss{color:#c42b30}
 .kst{font-weight:700;font-size:12px}
+
+/* change history */
+.hcard summary{cursor:pointer;list-style:none}.hcard summary::-webkit-details-marker{display:none}
+.hcard summary .t::after{content:' ▾';color:var(--mute);font-weight:400}
+.hl{padding:8px 0;border-top:1px solid #dfe6f5}.hl:first-of-type{margin-top:8px}
+.chk{display:flex;gap:8px;align-items:flex-start;margin:12px 0 8px;font-size:13px;color:var(--ink)}.chk input{width:20px;height:20px;margin-top:1px;flex:none}
+
+.hk{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#dfe6f5;color:#44527a;border-radius:6px;padding:1px 6px;margin-left:4px;vertical-align:middle}

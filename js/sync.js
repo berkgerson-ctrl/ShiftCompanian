@@ -49,7 +49,7 @@ async function signIn() {
 async function signOut() { try { await fb.a.signOut(fb.au); } catch (e) { set({ error: e.code || e.message }); } }
 
 // Firestore collections under users/{uid}  <->  IndexedDB stores
-const MAP = [['shifts', 'shifts'], ['leaves', 'leaves'], ['holidays', 'holidays'], ['swaps', 'swaps'], ['meta', 'settings']];
+const MAP = [['shifts', 'shifts'], ['leaves', 'leaves'], ['holidays', 'holidays'], ['swaps', 'swaps'], ['log', 'log'], ['meta', 'settings']];
 
 async function run() {
   if (!fb || !user) return;
@@ -85,6 +85,7 @@ async function run() {
       ...dirty.leaves.map(r => ['leaves', 'leaves', String(r.id), r]),
       ...dirty.holidays.map(r => ['holidays', 'holidays', String(r.d), r]),
       ...dirty.swaps.map(r => ['swaps', 'swaps', String(r.id), r]),
+      ...dirty.log.map(r => ['log', 'log', String(r.id), r]),
       ...dirty.rules.map(r => ['meta', 'settings', r.k, r])];
     for (let i = 0; i < items.length; i += 400) {
       const batch = f.writeBatch(db);

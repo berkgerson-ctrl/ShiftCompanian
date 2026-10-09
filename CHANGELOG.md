@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.1
+
+- **Change history now also records leave requests and swaps** (add, edit, delete, with the old values), next to shifts. A filter shows Everything, Shifts, Leave requests or Swaps.
+- **Change history moved** from Stats to *Rules > Data > Change history*. Stats is back to Schedule and KPIs.
+
+## 1.7.0
+
+- **Change history.** Stats has a third tab, *History*. Every shift you add, edit or remove (and every import) is saved with the date and time of the change and what the day looked like before. Filter by month. The history syncs with your Google sign-in; no Firestore rules change is needed.
+- **Import compares instead of guessing.** Importing a month now shows what is *new*, *changed* (old -> new), *removed* (shifts in the file's date range that the file no longer lists) and *unchanged*, before anything is saved. Changed days default to *Change*; each can be switched to *Keep old*. Removing missing days can be switched off; overtime days are never removed. A blank status keeps the existing status. Add an optional note (e.g. "December schedule email").
+- **Undo an import** from History (tap twice to confirm). The undo is recorded too.
+- Database upgrades to version 3 automatically. Clearing all data or loading demo data is not logged.
+
 ## 1.6.0
 
 - **KPIs.** Statistics now has two tabs: *Schedule* and *KPIs*. Add KPIs with a name, unit (%, number, minutes, score), direction (higher or lower is better) and target. Enter values per week, month or year, each with the total number of cases behind it (no case numbers are stored). Every KPI shows week-by-week and month-by-month trend charts with the target line, a cases-per-period bar chart, a year-by-year list and an all-entries table. Points are filled when on target, amber when within 5%, hollow red when off target. KPIs sync with your Google sign-in and are included in the backup file. *Clear all data* also clears KPIs; *Load demo data* does not touch them.

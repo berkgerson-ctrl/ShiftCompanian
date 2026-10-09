@@ -38,12 +38,12 @@ const exYear=(y,r)=>work.reduce((a,d)=>a+(UD(d).getUTCFullYear()==y&&S[d]&&S[d].
 function parseX(v){v=String(v).trim().toLowerCase();if(!v)return 0;let m;if(m=v.match(/^(\d{1,2}):([0-5]\d)$/))return +m[1]*60+ +m[2];if(m=v.match(/^(\d{1,3})\s*(m|min)?$/))return +m[1];return NaN}
 const fm=m=>{const ng=m<0;m=Math.abs(m);const d=Math.floor(m/STD),r=m%STD;return (ng?'−':'')+(d?d+'d ':'')+Math.floor(r/60)+'h '+String(r%60).padStart(2,'0')+'m'};
 const lab={Review:'Under Review',OT:'Overtime'};
-let tab=0,sel=TODAY,preSt=null,chkMode='ot',chkGive=0,swPre={},vm={y:_n.getFullYear(),m:_n.getMonth()},out='',col=false,modal=false,warn=false,editing=null,dl=false,imp=null,impDone='',lvId=null,swId=null,bhId=null;
+let tab=0,sel=TODAY,preSt=null,chkMode='ot',chkGive=0,swPre={},vm={y:_n.getFullYear(),m:_n.getMonth()},out='',col=false,modal=false,warn=false,editing=null,dl=false,imp=null,impDone='',impRm=[],impRmOn=true,impNote='',impSrc='',impLo=0,impHi=0,hMon='',hKind='',hLim=40,hArm=null,lvId=null,swId=null,bhId=null;
 function mv(k){let m=vm.m+k,y=vm.y;if(m<0){m=11;y--}if(m>11){m=0;y++}vm={y,m};draw()}
 function goto(d){sel=d;const t=UD(d);vm={y:t.getUTCFullYear(),m:t.getUTCMonth()}}
 const newId=()=>Date.now()*1000+Math.floor(Math.random()*1000);
 function openL(id){modal='lv';lvId=id;warn=false;dl=false;draw()}
-function openImp(){modal='imp';imp=null;impDone='';draw()}
+function openImp(){modal='imp';imp=null;impDone='';impRm=[];impNote='';impSrc='';draw()}
 function openM(d){editing=d;modal=true;warn=false;dl=false;draw()}
 function openW(id){swId=id;modal='sw';warn=false;dl=false;draw()}
 function openBH(d){bhId=d;modal='bh';warn=false;dl=false;draw()}
@@ -277,8 +277,39 @@ function rules(){const st=(k,l,min,max)=>`<div class="card row"><div class="t">$
   <div class="two"><button class="btn" onclick="openBH(null)">Add holiday</button><button class="btn" style="background:#8a97b8" onclick="modal='bhm';draw()">Add several</button></div>
   <h2 style="margin-top:14px">Opening balances</h2><div class="m" style="margin-bottom:8px">Hours:minutes you had before using this app (e.g. 36:12). Approved leave is deducted from these. TOIL earned on the bank holidays below, and ET from extra time you log on shifts, are added automatically, so leave them out of these figures.</div>${['PTO','TOIL','ET','Sick'].map(k=>`<div class="card row"><div class="t">${k}</div><input style="width:110px;text-align:right" value="${Math.floor(base[k]/60)}:${pad(base[k]%60)}" onchange="setBal('${k}',this.value)"></div>`).join('')}
   <h2 style="margin-top:14px">Sync</h2><div class="card"><div class="t">${dbOk?'● Saved on this device':'⚠ Not saved: storage unavailable'}</div><div class="m">${dbOk?'Every change is written to this device straight away and works offline.':'This browser is blocking local storage, so changes will be lost when the page reloads.'}</div></div>${syncCard()}
-  <h2 style="margin-top:14px">Google Sheets</h2>${sheetsCard()}<h2 style="margin-top:14px">Data</h2><button class="btn" onclick="modal='exp';draw()">Export for payroll (Google Sheets)</button><button class="btn" style="background:#8a97b8" onclick="saveBackup()">Download a backup (JSON)</button><button class="btn" style="background:#8a97b8" onclick="demo()">Load demo data</button><button class="btn" id="clr" style="background:var(--red)" onclick="clr()">Clear all data</button></div>`}
+  <h2 style="margin-top:14px">Google Sheets</h2>${sheetsCard()}<h2 style="margin-top:14px">Data</h2><button class="btn" onclick="modal='hist';draw()">Change history</button><button class="btn" onclick="modal='exp';draw()">Export for payroll (Google Sheets)</button><button class="btn" style="background:#8a97b8" onclick="saveBackup()">Download a backup (JSON)</button><button class="btn" style="background:#8a97b8" onclick="demo()">Load demo data</button><button class="btn" id="clr" style="background:var(--red)" onclick="clr()">Clear all data</button></div>`}
 // ---------- shift type editor ----------
+// ---------- change history ----------
+function histHTML(){return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod full" id="md"><div class="grab" id="mg"></div>
+  <div class="row"><h2 style="margin:0">Change history</h2><button class="xbtn" aria-label="Close" onclick="closeM()">✕</button></div>${histTab()}</div></div>`}
+const fmtSnap=s=>s?`${s.s}–${s.e}${s.st&&s.st!='Scheduled'?' · '+(lab[s.st]||s.st):''}${s.x>0?' · +'+fm(s.x)+(s.xr=='time'?' ET':s.xr=='money'?' paid':''):''}`:'';
+const hStamp=t=>new Date(t).toLocaleString([],{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const hDay=d=>`${DOW[dow(d)]} ${fd(d)} ${UD(d).getUTCFullYear()}`;
+const fmtL=s=>s?`${esc(s.type)} · ${s.full?'full day':esc(s.s+'–'+s.e)} · ${esc(lab[s.st]||s.st)}`:'';
+const fmtW=s=>s?`${esc(swapTitle(s))}${s.who?' with '+esc(s.who):''} · ${esc(s.st)}${s.fu?' · follow up '+fd(s.fu):''}`:'';
+const KIND={shift:['Shift',x=>esc(fmtSnap(x))],leave:['Leave',fmtL],swap:['Swap',fmtW]};
+function hLine(r){const k=r.k||'shift',f=KIND[k][1],w=r.a=='edit'?`${f(r.b)} → <b>${f(r.n)}</b>`:r.a=='add'?`added <b>${f(r.n)}</b>`:`removed · was ${f(r.b)}`;
+  return `<div class="hl"><div class="t">${hDay(r.d)} <span class="hk">${KIND[k][0]}</span></div><div class="m">${w}</div></div>`}
+function histTab(){const rows=[...LOG].filter(r=>!hKind||(r.k||'shift')==hKind).sort((a,b)=>b.t-a.t),mons=[...new Set(rows.map(r=>iso(r.d).slice(0,7)))].sort().reverse(),f=hMon?rows.filter(r=>iso(r.d).slice(0,7)==hMon):rows;
+  const undone=new Set(rows.filter(r=>r.of).map(r=>r.of)),G=[],seen=new Map();
+  for(const r of f){if(r.batch){let g=seen.get(r.batch);if(!g){g={batch:r.batch,t:r.t,label:r.label,src:r.src,items:[]};seen.set(r.batch,g);G.push(g)}g.items.push(r)}else G.push({t:r.t,src:r.src,items:[r]})}
+  const head=`<div class="m" style="margin:6px 0 8px">Every shift, leave request and swap you add, edit or remove (and every import) is recorded here with the date and time of the change and what it was before.</div>`+
+    `<div class="f"><label>Show</label><select onchange="hKind=this.value;keepDraw()">${[['','Everything'],['shift','Shifts'],['leave','Leave requests'],['swap','Swaps']].map(x=>`<option value="${x[0]}" ${x[0]==hKind?'selected':''}>${x[1]}</option>`).join('')}</select></div>`+(mons.length?`<div class="f"><label>For dates in</label><select onchange="hMon=this.value;keepDraw()"><option value="">All months</option>${mons.map(m=>`<option value="${m}" ${m==hMon?'selected':''}>${MON[+m.slice(5)-1]} ${m.slice(0,4)}</option>`).join('')}</select></div>`:'');
+  if(!G.length)return head+'<div class="card"><div class="t">No changes recorded yet</div><div class="m">From now on, changes show up here.</div></div>';
+  const cnts=its=>{const c={add:0,edit:0,remove:0};its.forEach(r=>c[r.a]++);return `${c.edit} changed · ${c.add} added · ${c.remove} removed`};
+  return head+G.slice(0,hLim).map(g=>{
+    if(!g.batch)return `<div class="card hcard"><div class="m">${hStamp(g.t)}${g.src=='undo'?' · undo':''}</div>${hLine(g.items[0])}</div>`;
+    const imp=g.src=='import',sorted=g.items.slice().sort((a,b)=>a.d-b.d),isU=undone.has(String(g.batch))||undone.has(g.batch);
+    return `<div class="card hcard"><details><summary><div class="m">${hStamp(g.t)} · ${imp?'Import':'Undo'}${g.label?' · '+esc(g.label):''}</div><div class="t">${cnts(g.items)}</div></summary>${sorted.map(hLine).join('')}${imp?(isU?'<div class="m" style="margin-top:6px">✓ This import was undone.</div>':`<button class="btn" id="hu${g.batch}" style="background:var(--red);margin-top:8px" onclick="histUndo('${g.batch}')">Undo this import</button>`):''}</details></div>`}).join('')+
+    (G.length>hLim?'<button class="btn" style="background:#8a97b8" onclick="hLim+=40;keepDraw()">Show older changes</button>':'')}
+function histUndo(id){const b=document.getElementById('hu'+id);if(hArm!=id){hArm=id;if(b)b.textContent='Tap again: put these days back as they were';return}hArm=null;
+  const its=LOG.filter(r=>String(r.batch)==String(id)&&r.src=='import'&&(r.k||'shift')=='shift');if(!its.length)return;
+  logCtx={src:'undo',batch:newId(),label:'Undo of '+(its[0].label||'import'),of:its[0].batch};
+  try{its.slice().sort((a,b)=>b.t-a.t).forEach(r=>{const d=r.d;
+    if(r.b){S[d]={f:'',...r.b};if(!work.includes(d))work.push(d);pS(d)}
+    else if(S[d]){xS(d);delete S[d];const i=work.indexOf(d);if(i>=0)work.splice(i,1)}});work.sort((x,y)=>x-y)}
+  finally{logCtx={src:'manual',batch:null,label:null,of:null}}
+  showOk('Import undone');keepDraw()}
 let tyId=null,tyC=TYPE_COLORS[2],tyDel=false;
 function openTy(i){tyId=i;tyDel=false;tyC=i==null?(TYPE_COLORS.find(c=>!TYPES.some(x=>x.c==c))||TYPE_COLORS[0]):TYPES[i].c;modal='ty';draw()}
 function pickC(c){tyC=c;document.querySelectorAll('.sw8 button').forEach(b=>b.classList.toggle('on',b.dataset.c==c))}
@@ -422,23 +453,39 @@ function csv(t){const L=t.trim().split(/\r?\n/).filter(x=>x.trim());if(L.length<
 function pd(v){let y,m,d,r;if(typeof v=='number'){const t=new Date(Date.UTC(1899,11,30)+Math.floor(v)*864e5);y=t.getUTCFullYear();m=t.getUTCMonth()+1;d=t.getUTCDate()}else{const q=String(v).trim();if(r=q.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)){y=+r[1];m=+r[2];d=+r[3]}else if(r=q.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/)){d=+r[1];m=+r[2];y=+r[3]<100?2000+ +r[3]:+r[3]}else return null}return{y,m,d}}
 function pt(v){if(typeof v=='number')return Math.round((v%1)*1440);const r=String(v).trim().match(/^(\d{1,2})[:.h](\d{2})\s*(am|pm)?$/i);if(!r)return null;let h=+r[1];const m=+r[2];if(r[3])h=h%12+(/pm/i.test(r[3])?12:0);return h>23||m>59?null:h*60+m}
 function pp(v){if(v===''||v==null)return 0;if(typeof v=='number')return Math.min(STD,Math.round(v*60));const t=String(v).trim().replace(',','.'),r=t.match(/^(\d+):(\d{2})$/);if(r)return Math.min(STD,+r[1]*60+ +r[2]);return isNaN(+t)?NaN:Math.min(STD,Math.round(+t*60))}
-function build(objs){const seen=new Set();imp=[];impDone='';objs.forEach((o,i)=>{if(!Object.values(o).some(v=>String(v).trim()))return;
+function build(objs){const seen=new Set();imp=[];impDone='';impRm=[];impRmOn=true;objs.forEach((o,i)=>{if(!Object.values(o).some(v=>String(v).trim()))return;
   const dt=pd(pick(o,'date')),a=pt(pick(o,'start')),b=pt(pick(o,'end')),sr=String(pick(o,'status')).trim(),st=sr?SM[sr.toLowerCase().replace(/[^a-z]/g,'')]:'Scheduled',p=0;
-  const r={lab:dt?`${dt.y}-${pad(dt.m)}-${pad(dt.d)}`:'Row '+(i+2),d:dt&&UD(E(dt.y,dt.m-1,dt.d)).getUTCDate()==dt.d?E(dt.y,dt.m-1,dt.d):0,s:a,e:b,st,p,err:'',kind:'',act:'skip'};
+  const r={lab:dt?`${dt.y}-${pad(dt.m)}-${pad(dt.d)}`:'Row '+(i+2),d:dt&&UD(E(dt.y,dt.m-1,dt.d)).getUTCDate()==dt.d?E(dt.y,dt.m-1,dt.d):0,s:a,e:b,st,stBlank:!sr,p,err:'',kind:'',act:'skip'};
   if(!dt)r.err='Unreadable date';else if(!r.d)r.err='Not a real calendar date';
   else if(a==null||b==null)r.err='Unreadable start or end time';else if(b<=a)r.err='End must be after start (overnight not supported yet)';
   else if(!st)r.err=/^denied$/i.test(sr)?'Shifts cannot be Denied (the company sets the schedule)':'Unknown status "'+sr+'"';else if(isNaN(p))r.err='Unreadable partial hours';else if(seen.has(r.d))r.err='Duplicate date in file';
-  if(!r.err){seen.add(r.d);r.kind=work.includes(r.d)?'conflict':'new'}imp.push(r)})}
+  if(!r.err)seen.add(r.d);imp.push(r)});
+  // compare every good row with what the app has now: new / changed (old → new) / same
+  imp.forEach(r=>{if(r.err)return;const c=S[r.d];
+    if(!c){r.kind='new';r.act='add';return}
+    r.st2=r.stBlank?c.st:r.st;r.old=snap(c);
+    r.kind=hm(c.s)==r.s&&hm(c.e)==r.e&&c.st==r.st2?'same':'changed';r.act=r.kind=='changed'?'replace':'skip'});
+  // shifts the app has inside the file's date range that the file no longer lists = removed by the new schedule (overtime is never removed)
+  const good=imp.filter(r=>!r.err),bad=new Set(imp.filter(r=>r.err&&r.d).map(r=>r.d));
+  if(good.length){const lo=Math.min(...good.map(r=>r.d)),hi=Math.max(...good.map(r=>r.d));impLo=lo;impHi=hi;
+    impRm=work.filter(x=>x>=lo&&x<=hi&&!seen.has(x)&&!bad.has(x)&&S[x]&&S[x].st!='OT').sort((x,y)=>x-y)}}
 const iw=t=>{const e=document.getElementById('iw');if(e)e.textContent=t};
-function pv(){const o=csv(document.getElementById('imp-t').value);if(!o.length)return iw('Paste a header row and at least one data row.');build(o);draw()}
-function readFile(f){if(!f)return;const x=/\.xlsx?$/i.test(f.name),rd=new FileReader();
+function pv(){impSrc='Pasted schedule';const o=csv(document.getElementById('imp-t').value);if(!o.length)return iw('Paste a header row and at least one data row.');build(o);draw()}
+function readFile(f){if(!f)return;impSrc=f.name;const x=/\.xlsx?$/i.test(f.name),rd=new FileReader();
   rd.onload=()=>{try{let o;if(x){if(typeof XLSX=='undefined')return iw('Excel reader did not load. Save as CSV and try again.');const wb=XLSX.read(rd.result,{type:'array'});o=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:'',raw:true})}else o=csv(rd.result);if(!o.length)return iw('No data rows found.');build(o);draw()}catch(e){iw('Could not read that file.')}};
   x?rd.readAsArrayBuffer(f):rd.readAsText(f)}
-const cnt=()=>imp.filter(r=>!r.err&&(r.kind=='new'||r.act=='replace')).length;
-function ub(){const n=cnt(),b=document.getElementById('ib');b.textContent=`Import ${n} shift${n==1?'':'s'}`;b.disabled=!n}
-function doImport(){let a=0,rp=0;imp.forEach(r=>{if(r.err||(r.kind=='conflict'&&r.act!='replace'))return;if(r.kind=='new'){work.push(r.d);a++}else rp++;S[r.d]={...(S[r.d]||{f:''}),s:tm(r.s),e:tm(r.e),st:r.st};pS(r.d)});work.sort((x,y)=>x-y);
+const cnt=()=>imp.filter(r=>!r.err&&(r.kind=='new'||(r.kind=='changed'&&r.act=='replace'))).length+(impRmOn?impRm.length:0);
+function ub(){const n=cnt(),b=document.getElementById('ib');b.textContent=`Apply ${n} change${n==1?'':'s'}`;b.disabled=!n}
+function doImport(){let a=0,c=0,rm=0,same=0;const batch=newId(),lbl=(impNote.trim()||impSrc||'Import').slice(0,80);
+  logCtx={src:'import',batch,label:lbl,of:null};
+  try{imp.forEach(r=>{if(r.err)return;if(r.kind=='same'){same++;return}
+      if(r.kind=='new'){work.push(r.d);a++}else if(r.act=='replace')c++;else return;
+      S[r.d]={...(S[r.d]||{f:''}),s:tm(r.s),e:tm(r.e),st:r.kind=='changed'?r.st2:r.st};pS(r.d)});
+    if(impRmOn)impRm.forEach(d=>{if(!S[d])return;xS(d);delete S[d];const i=work.indexOf(d);if(i>=0)work.splice(i,1);rm++})}
+  finally{logCtx={src:'manual',batch:null,label:null,of:null}}
+  work.sort((x,y)=>x-y);
   const bad=work.filter(x=>S[x].st!='Denied'&&!off(x)&&check(x).length);
-  impDone=`Added ${a}, replaced ${rp}. `+(bad.length?`⚠ These days break your limits: ${bad.map(fd).join(', ')}.`:'All days are within your limits.');imp=null;draw();showOk('Imported '+(a+rp))}
+  impDone=`Added ${a}, changed ${c}, removed ${rm}, unchanged ${same}. Every change is saved in Rules > Data > Change history. `+(bad.length?`⚠ These days break your limits: ${bad.map(fd).join(', ')}.`:'All days are within your limits.');imp=null;impRm=[];draw();showOk('Applied '+(a+c+rm))}
 // ---------- import template ----------
 const TPL_INFO=[['Shift Companion schedule template'],[],['Fill in the Schedule sheet (one row per shift), save the file, then import it from Schedule > Import.'],[],
   ['Date','YYYY-MM-DD or DD/MM/YYYY. A normal Excel date also works.'],['Start Time','24-hour time, e.g. 08:50'],['End Time','24-hour time, later than the start (shifts cannot cross midnight yet)'],
@@ -457,15 +504,19 @@ function dlTpl(kind){if(kind=='csv')return saveBlob([tplCsv()],'text/csv;charset
   saveBlob([XLSX.write(tplWorkbook(),{bookType:'xlsx',type:'array'})],'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','shift-schedule-template.xlsx')}
 function impHTML(){let b;
   if(impDone)b=`<div class="card"><div class="t">✓ Import finished</div><div class="m" style="margin-top:6px">${esc(impDone)}</div></div><button class="btn" onclick="closeM()">Done</button>`;
-  else if(!imp)b=`<div class="m">Columns: Date, Start Time, End Time, Status (extra columns are ignored). Partial time off is requested from the Leave tab.<br>Date as YYYY-MM-DD or DD/MM/YYYY · times in 24h (07:00) · status (optional): Scheduled, Planned, Under Review, Approved.</div>
+  else if(!imp)b=`<div class="m">Send a whole month: the app compares it with your current schedule and shows what is new, changed (old → new) and removed before saving anything. Columns: Date, Start Time, End Time, Status (extra columns are ignored). Partial time off is requested from the Leave tab.<br>Date as YYYY-MM-DD or DD/MM/YYYY · times in 24h (07:00) · status (optional): Scheduled, Planned, Under Review, Approved.</div>
   <div class="m" style="margin-top:10px">Not sure of the format? Download a template, fill it in, then choose it below.</div>
   <div class="two" style="margin-bottom:4px"><button class="btn" onclick="dlTpl('xlsx')">Excel template</button><button class="btn" style="background:#8a97b8" onclick="dlTpl('csv')">CSV template</button></div>
   <div class="f"><label>Excel or CSV file</label><input type="file" accept=".xlsx,.xls,.csv,.txt" onchange="readFile(this.files[0])"></div>
   <div class="f"><label>…or paste CSV</label><textarea id="imp-t" rows="5" placeholder="Date,Start Time,End Time,Status"></textarea></div>
   <div id="iw" class="bad m" style="min-height:16px;margin-top:6px"></div><div class="two"><button class="btn" style="background:#8a97b8" onclick="document.getElementById('imp-t').value=EX">Load example</button><button class="btn" onclick="pv()">Preview</button></div>`;
-  else{const nn=imp.filter(r=>r.kind=='new').length,nc=imp.filter(r=>r.kind=='conflict').length,ne=imp.filter(r=>r.err).length;
-    b=`<div class="m" style="margin-bottom:8px">${nn} new · ${nc} clash with existing shifts · ${ne} with errors. Rows with errors are never imported.</div>`+(imp.length?imp.map((r,i)=>`<div class="card row" style="padding:9px 12px"><div><div class="t">${r.lab}${r.err?'':' · '+tm(r.s)+'–'+tm(r.e)}</div><div class="m">${r.err?esc(r.err):(lab[r.st]||r.st)}</div></div>${r.err?'<span class="pill st-Denied">Error</span>':r.kind=='new'?'<span class="pill st-Approved">New</span>':`<select style="width:auto" onchange="imp[${i}].act=this.value;ub()"><option value="skip">Keep existing</option><option value="replace">Replace</option></select>`}</div>`).join(''):'<div class="card">No rows found.</div>')+
-    `<div class="two"><button class="btn" style="background:#8a97b8" onclick="imp=null;draw()">Back</button><button class="btn" id="ib" onclick="doImport()" ${cnt()?'':'disabled'}>Import ${cnt()} shifts</button></div>`}
+  else{const nn=imp.filter(r=>r.kind=='new').length,nc=imp.filter(r=>r.kind=='changed').length,ns=imp.filter(r=>r.kind=='same').length,ne=imp.filter(r=>r.err).length,nr=impRm.length,rg=s=>`${s.s}–${s.e}${s.st&&s.st!='Scheduled'?' · '+(lab[s.st]||s.st):''}`;
+    b=`<div class="m" style="margin-bottom:8px"><b>${nn} new · ${nc} changed · ${nr} removed · ${ns} unchanged</b>${ne?` · ${ne} with errors`:''}. Compared with your schedule from ${imp.some(r=>!r.err)?fd(impLo)+' to '+fd(impHi):'–'}. Nothing is saved until you press the button below, and every change goes into Rules &gt; Data &gt; Change history.</div>`+
+    imp.filter(r=>r.kind!='same').map(r=>{const i=imp.indexOf(r);return `<div class="card row" style="padding:9px 12px"><div><div class="t">${r.lab}${r.err?'':r.kind=='new'?' · '+tm(r.s)+'–'+tm(r.e):''}</div><div class="m">${r.err?esc(r.err):r.kind=='new'?esc(lab[r.st]||r.st):`${esc(rg(r.old))} → <b>${tm(r.s)}–${tm(r.e)}${r.st2&&r.st2!='Scheduled'?' · '+esc(lab[r.st2]||r.st2):''}</b>`}</div></div>${r.err?'<span class="pill st-Denied">Error</span>':r.kind=='new'?'<span class="pill st-Approved">New</span>':`<select style="width:auto" onchange="imp[${i}].act=this.value;ub()"><option value="replace" ${r.act=='replace'?'selected':''}>Change</option><option value="skip" ${r.act=='skip'?'selected':''}>Keep old</option></select>`}</div>`}).join('')+
+    (nr?`<label class="chk"><input type="checkbox" ${impRmOn?'checked':''} onchange="impRmOn=this.checked;ub()"> Remove the ${nr} shift${nr==1?'':'s'} below, because the new file does not list ${nr==1?'it':'them'}</label>`+impRm.map(d=>`<div class="card row" style="padding:9px 12px"><div><div class="t">${DOW[dow(d)]} ${fd(d)} ${UD(d).getUTCFullYear()}</div><div class="m">was ${esc(rg(S[d]))}</div></div><span class="pill st-Denied">Removed</span></div>`).join(''):'')+
+    (!imp.length||(!nn&&!nc&&!nr&&!ne)?'<div class="card">Nothing changes: the file matches your schedule.</div>':'')+
+    `<div class="f"><label>Note for the history (optional)</label><input id="imp-note" value="${esc(impNote)}" oninput="impNote=this.value" placeholder="e.g. December schedule email"></div>
+    <div class="two"><button class="btn" style="background:#8a97b8" onclick="imp=null;draw()">Back</button><button class="btn" id="ib" onclick="doImport()" ${cnt()?'':'disabled'}>Apply ${cnt()} change${cnt()==1?'':'s'}</button></div>`}
   return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>Import schedule</h2>${b}</div></div>`}
 // ---------- swap log ----------
 const SWST=[['Planned','Planned'],['Review','Under Review'],['Approved','Approved'],['Denied','Denied']];
@@ -519,7 +570,7 @@ function fxOf(){let f='';if(pTab!==null){if(modal&&!pModal)f='modal';else if(!mo
 function draw(){try{drawNow()}catch(e){crash(e)}}
 function drawNow(){const v=[sched,swaps,leave,rules][tab]();const fx=fxOf(),ap=document.getElementById('app');if(ap.dataset)ap.dataset.fx=fx;
   const sv=['.page','.sheet','#md'].map(q=>{const e=ap.querySelector(q);return e?e.scrollTop:0});
-  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal=='chk'?chkHTML():modal=='kpi'?kpiHTML():modal=='kpe'?kpeHTML():modal?modalHTML():'');if(fx!=='tr'&&fx!=='tl'){const q=ap.querySelector('.page'),w=ap.querySelector('.sheet'),m=ap.querySelector('#md');if(q)q.scrollTop=sv[0];if(w&&fx!=='day')w.scrollTop=sv[1];if(m&&fx!=='modal')m.scrollTop=sv[2]}
+  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal=='hist'?histHTML():modal=='chk'?chkHTML():modal=='kpi'?kpiHTML():modal=='kpe'?kpeHTML():modal?modalHTML():'');if(fx!=='tr'&&fx!=='tl'){const q=ap.querySelector('.page'),w=ap.querySelector('.sheet'),m=ap.querySelector('#md');if(q)q.scrollTop=sv[0];if(w&&fx!=='day')w.scrollTop=sv[1];if(m&&fx!=='modal')m.scrollTop=sv[2]}
   wire();if(modal=='lv')lu();if(!dbOk&&!document.getElementById('wbar')){const w=document.createElement('div');w.id='wbar';w.className='wbar';w.textContent='Storage unavailable: changes will not be saved. Close other copies of the app and reload.';ap.appendChild(w)}}
 function tsv(){const it=[];
   work.forEach(d=>{const x=S[d];it.push([d,0,isOT(d)?'Overtime':'Shift','',x.s,x.e,hm(x.e)-hm(x.s),lab[x.st]||x.st,x.f||'']);if(exMin(d))it.push([d,0.5,'Extra time',x.xr=='time'?'Time (ET)':'Money','','',exMin(d),'Reimbursed as '+(x.xr=='time'?'time':'money'),''])});
@@ -540,13 +591,24 @@ const DEMO=structuredClone({S,work,leaves,
   holidays:[{d:O+5,name:'Demo holiday (leave requested)'},{d:O+12,name:'Demo holiday (worked)'},{d:O+14,name:'Demo holiday (not scheduled)'}],
   swapLog:[{id:9001,give:O+13,take:O+14,who:'Sam',st:'Approved',fu:0,note:''},{id:9002,give:O+27,take:O+28,who:'Alex',st:'Review',fu:O+8,note:'Waiting on manager'}]});
 let db=null,dbOk=false,cl=false;
-const dbOpen=()=>new Promise((res,rej)=>{try{const r=indexedDB.open('shiftapp',2),to=setTimeout(()=>rej('timeout'),8000);r.onupgradeneeded=()=>{const d=r.result,mk=(n,kp)=>{if(!d.objectStoreNames.contains(n))d.createObjectStore(n,{keyPath:kp})};mk('shifts','d');mk('leaves','id');mk('meta','k');mk('holidays','d');mk('swaps','id')};r.onsuccess=()=>{clearTimeout(to);const d=r.result;d.onversionchange=()=>d.close();res(d)};r.onerror=()=>{clearTimeout(to);rej(r.error)}}catch(e){rej(e)}});
+const dbOpen=()=>new Promise((res,rej)=>{try{const r=indexedDB.open('shiftapp',3),to=setTimeout(()=>rej('timeout'),8000);r.onupgradeneeded=()=>{const d=r.result,mk=(n,kp)=>{if(!d.objectStoreNames.contains(n))d.createObjectStore(n,{keyPath:kp})};mk('shifts','d');mk('leaves','id');mk('meta','k');mk('holidays','d');mk('swaps','id');mk('log','id')};r.onsuccess=()=>{clearTimeout(to);const d=r.result;d.onversionchange=()=>d.close();res(d)};r.onerror=()=>{clearTimeout(to);rej(r.error)}}catch(e){rej(e)}});
 const getAll=n=>new Promise((res,rej)=>{const q=db.transaction(n).objectStore(n).getAll();q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)});
 const put=(n,v)=>{if(!dbOk)return;try{const t=db.transaction(n,'readwrite');t.objectStore(n).put(v);t.oncomplete=()=>window.dispatchEvent(new Event('localchange'));t.onerror=()=>{dbOk=false}}catch(e){dbOk=false}};
-const pS=d=>{if(S[d])put('shifts',{...S[d],d,u:Date.now(),dirty:1})},xS=d=>put('shifts',{d,del:true,u:Date.now(),dirty:1});
-const pL=l=>put('leaves',{...l,u:Date.now(),dirty:1}),xL=id=>put('leaves',{id,del:true,u:Date.now(),dirty:1});
+// Change history: every shift that is added, edited, removed or imported is recorded with its time and what it was before.
+// LS = the last saved version of each shift (the "before"); LOG = all history entries (append-only, synced to the cloud).
+const snap=s=>{if(!s)return null;const o={s:s.s,e:s.e,st:s.st,f:s.f||''};if(s.x>0){o.x=+s.x;o.xr=s.xr||''}return o};
+const snapEq=(a,b)=>(!a&&!b)||(!!a&&!!b&&a.s==b.s&&a.e==b.e&&a.st==b.st&&(a.f||'')==(b.f||'')&&(a.x||0)==(b.x||0)&&(a.xr||'')==(b.xr||''));
+let LOG=[],LS={},LL={},LW={},noLog=false,logCtx={src:'manual',batch:null,label:null,of:null};
+const snapL=l=>l?{d:l.d,type:l.type,full:!!l.full,s:l.full?null:(l.s??null),e:l.full?null:(l.e??null),st:l.st}:null;
+const snapW=w=>w?{give:w.give||0,take:w.take||0,who:w.who||'',st:w.st||'',fu:w.fu||0,note:w.note||''}:null;
+const eqO=(a,b)=>(!a&&!b)||(!!a&&!!b&&JSON.stringify(a)==JSON.stringify(b));
+function logShift(d,b,n,k='shift',rid=null){if(noLog||(k=='shift'?snapEq(b,n):eqO(b,n)))return;const t=Date.now(),r={id:newId(),u:t,t,k,rid:rid==null?0:rid,d,a:b&&n?'edit':n?'add':'remove',b,n,src:logCtx.src,batch:logCtx.batch,label:logCtx.label,of:logCtx.of,dirty:1};LOG.push(r);put('log',r)}
+const logL=(id,n)=>{const b=LL[id]||null;logShift(n?n.d:b.d,b,n,'leave',id);if(n)LL[id]=n;else delete LL[id]};
+const logW=(id,n)=>{const b=LW[id]||null,x=n||b;logShift(x.give||x.take||0,b,n,'swap',id);if(n)LW[id]=n;else delete LW[id]};
+const pS=d=>{if(S[d]){const n=snap(S[d]);logShift(d,LS[d]||null,n);LS[d]=n;put('shifts',{...S[d],d,u:Date.now(),dirty:1})}},xS=d=>{logShift(d,LS[d]||null,null);delete LS[d];put('shifts',{d,del:true,u:Date.now(),dirty:1})};
+const pL=l=>{logL(l.id,snapL(l));put('leaves',{...l,u:Date.now(),dirty:1})},xL=id=>{if(LL[id])logL(id,null);put('leaves',{id,del:true,u:Date.now(),dirty:1})};
 const pH=h=>put('holidays',{...h,u:Date.now(),dirty:1}),xH=d=>put('holidays',{d,del:true,u:Date.now(),dirty:1});
-const pW=w=>put('swaps',{...w,u:Date.now(),dirty:1}),xW=id=>put('swaps',{id,del:true,u:Date.now(),dirty:1});
+const pW=w=>{logW(w.id,snapW(w));put('swaps',{...w,u:Date.now(),dirty:1})},xW=id=>{if(LW[id])logW(id,null);put('swaps',{id,del:true,u:Date.now(),dirty:1})};
 const pM=()=>{put('meta',{k:'rules',v:{...R},u:Date.now(),dirty:1});armNotifs()},pB=()=>put('meta',{k:'balances',v:{...base},u:Date.now(),dirty:1}),pT=()=>put('meta',{k:'types',v:TYPES.map(x=>({...x})),u:Date.now(),dirty:1});
 // A shift needs a start and end time; a partial leave needs its start and end. Records missing them (written by the
 // old sync bug) are ignored everywhere instead of crashing the app, and are never pushed to the cloud.
@@ -554,11 +616,11 @@ const okT=v=>typeof v=='string'&&/^\d{1,2}:\d\d$/.test(v);
 const valid=(n,r)=>!!r&&(r.del||(n=='shifts'?okT(r.s)&&okT(r.e):n=='leaves'?!!r.full||(okT(r.s)&&okT(r.e)):true));
 let bootErr=null;
 async function boot(){try{db=await dbOpen();dbOk=true}catch(e){dbOk=false;bootErr=e;return}
-  try{const[sh,lv,me,ho,sw]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]),m=Object.fromEntries(me.map(x=>[x.k,x.v]));
-  if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);sh.filter(x=>!x.del&&valid('shifts',x)).forEach(x=>{S[x.d]=x;work.push(x.d)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del&&valid('leaves',x));holidays=ho.filter(x=>!x.del);swapLog=sw.filter(x=>!x.del);if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);if(Array.isArray(m.types)&&m.types.length)TYPES=m.types;if(m.kpis&&Array.isArray(m.kpis.list))KP=m.kpis;lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
+  try{const[sh,lv,me,ho,sw,lg]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps'),getAll('log')]),m=Object.fromEntries(me.map(x=>[x.k,x.v]));
+  if(m.seeded){work.length=0;Object.keys(S).forEach(k=>delete S[k]);LOG=lg;sh.filter(x=>!x.del&&valid('shifts',x)).forEach(x=>{S[x.d]=x;work.push(x.d);LS[x.d]=snap(x)});work.sort((a,b)=>a-b);leaves=lv.filter(x=>!x.del&&valid('leaves',x));leaves.forEach(x=>{LL[x.id]=snapL(x)});holidays=ho.filter(x=>!x.del);swapLog=sw.filter(x=>!x.del);swapLog.forEach(x=>{LW[x.id]=snapW(x)});if(m.rules)Object.assign(R,m.rules);if(m.balances)Object.assign(base,m.balances);if(Array.isArray(m.types)&&m.types.length)TYPES=m.types;if(m.kpis&&Array.isArray(m.kpis.list))KP=m.kpis;lid=Math.max(m.lid||1,1,...lv.map(x=>x.id+1))}
   else{work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[];put('meta',{k:'seeded',v:1})}}catch(e){bootErr=e}}
-function wipe(){work.forEach(d=>xS(d));leaves.forEach(l=>xL(l.id));holidays.forEach(h=>xH(h.d));swapLog.forEach(w=>xW(w.id));work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[]}
-function demo(){wipe();const D=structuredClone(DEMO);Object.assign(S,D.S);work.push(...D.work);leaves=D.leaves;holidays=D.holidays;swapLog=D.swapLog;work.forEach(pS);leaves.forEach(pL);holidays.forEach(pH);swapLog.forEach(pW);lid=Math.max(lid,5);Object.assign(base,DEMO_BASE);pB();draw()}
+function wipe(){const nl=noLog;noLog=true;work.forEach(d=>xS(d));leaves.forEach(l=>xL(l.id));holidays.forEach(h=>xH(h.d));swapLog.forEach(w=>xW(w.id));work.length=0;Object.keys(S).forEach(k=>delete S[k]);leaves=[];holidays=[];swapLog=[];noLog=nl}
+function demo(){noLog=true;wipe();noLog=true;const D=structuredClone(DEMO);Object.assign(S,D.S);work.push(...D.work);leaves=D.leaves;holidays=D.holidays;swapLog=D.swapLog;work.forEach(pS);leaves.forEach(pL);holidays.forEach(pH);swapLog.forEach(pW);lid=Math.max(lid,5);Object.assign(base,DEMO_BASE);pB();noLog=false;draw()}
 function clr(){const b=document.getElementById('clr');if(!cl){cl=true;b.textContent='Tap again to erase everything (also in the cloud once synced)';return}cl=false;wipe();KP={list:[],vals:{}};pK();draw()}
 const ready=boot();
 const isBlank=()=>{const a=document.getElementById('app');return !a||!a.children.length||!!a.querySelector('.boot')};
@@ -579,18 +641,20 @@ window.redraw=()=>{clearTimeout(rdT);rdT=setTimeout(function go(){const q=Date.n
   const a=document.activeElement;if(booted&&!crashed&&!modal&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))){try{draw()}catch(e){console.error(e)}}},80)};
 const idbGet=(n,k)=>new Promise((res,rej)=>{const q=db.transaction(n).objectStore(n).get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)});
 const putRaw=(n,v)=>new Promise((res,rej)=>{const t=db.transaction(n,'readwrite');t.objectStore(n).put(v);t.oncomplete=res;t.onerror=()=>rej(t.error)});
-const keyOf=(n,r)=>n=='shifts'||n=='holidays'?r.d:n=='leaves'||n=='swaps'?r.id:r.k;
+const keyOf=(n,r)=>n=='shifts'||n=='holidays'?r.d:n=='leaves'||n=='swaps'||n=='log'?r.id:r.k;
 // Bridge used by js/sync.js. Records merge per record: the newest edit time (u) wins.
 window.syncApi={
-  async dirty(){await ready;const[a,b,c,h,w]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps')]);return{shifts:a.filter(x=>x.dirty&&valid('shifts',x)),leaves:b.filter(x=>x.dirty&&valid('leaves',x)),holidays:h.filter(x=>x.dirty),swaps:w.filter(x=>x.dirty),rules:c.filter(x=>(x.k=='rules'||x.k=='balances'||x.k=='types'||x.k=='kpis')&&x.dirty)}},
-  async apply(n,r){await ready;if(!valid(n,r))return;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u>=r.u&&valid(n,cur))return;await putRaw(n,{...r,dirty:0});
-    if(n=='shifts'){if(r.del){delete S[r.d];const i=work.indexOf(r.d);if(i>=0)work.splice(i,1)}else{S[r.d]={...r};if(!work.includes(r.d)){work.push(r.d);work.sort((a,b)=>a-b)}}}
-    else if(n=='leaves'){leaves=leaves.filter(x=>x.id!=r.id);if(!r.del)leaves.push({...r})}
+  async dirty(){await ready;const[a,b,c,h,w,g]=await Promise.all([getAll('shifts'),getAll('leaves'),getAll('meta'),getAll('holidays'),getAll('swaps'),getAll('log')]);return{log:g.filter(x=>x.dirty),shifts:a.filter(x=>x.dirty&&valid('shifts',x)),leaves:b.filter(x=>x.dirty&&valid('leaves',x)),holidays:h.filter(x=>x.dirty),swaps:w.filter(x=>x.dirty),rules:c.filter(x=>(x.k=='rules'||x.k=='balances'||x.k=='types'||x.k=='kpis')&&x.dirty)}},
+  async apply(n,r){await ready;if(!valid(n,r))return;const cur=await idbGet(n,keyOf(n,r));
+    if(n=='log'){if(cur)return;await putRaw(n,{...r,dirty:0});LOG.push({...r,dirty:0});window.redraw();return}   
+    if(cur&&cur.u>=r.u&&valid(n,cur))return;await putRaw(n,{...r,dirty:0});
+    if(n=='shifts'){if(r.del){delete S[r.d];delete LS[r.d];const i=work.indexOf(r.d);if(i>=0)work.splice(i,1)}else{S[r.d]={...r};LS[r.d]=snap(r);if(!work.includes(r.d)){work.push(r.d);work.sort((a,b)=>a-b)}}}
+    else if(n=='leaves'){leaves=leaves.filter(x=>x.id!=r.id);if(r.del)delete LL[r.id];else{leaves.push({...r});LL[r.id]=snapL(r)}}
     else if(n=='holidays'){holidays=holidays.filter(x=>x.d!=r.d);if(!r.del)holidays.push({...r})}
-    else if(n=='swaps'){swapLog=swapLog.filter(x=>x.id!=r.id);if(!r.del)swapLog.push({...r})}
+    else if(n=='swaps'){swapLog=swapLog.filter(x=>x.id!=r.id);if(r.del)delete LW[r.id];else{swapLog.push({...r});LW[r.id]=snapW(r)}}
     else if(r.k=='rules')Object.assign(R,r.v);else if(r.k=='balances')Object.assign(base,r.v);else if(r.k=='types'&&Array.isArray(r.v))TYPES=r.v;else if(r.k=='kpis'&&r.v&&Array.isArray(r.v.list))KP=r.v;
     armNotifs();window.redraw()},
-  async markAllDirty(){await ready;for(const n of['shifts','leaves','holidays','swaps','meta'])for(const x of await getAll(n)){
+  async markAllDirty(){await ready;for(const n of['shifts','leaves','holidays','swaps','log','meta'])for(const x of await getAll(n)){
     if(x.dirty||!valid(n,x)||(n=='meta'&&!(x.k=='rules'||x.k=='balances'||x.k=='types'||x.k=='kpis')))continue;await putRaw(n,{...x,dirty:1})}},
   async clean(n,r){await ready;const cur=await idbGet(n,keyOf(n,r));if(cur&&cur.u==r.u)await putRaw(n,{...cur,dirty:0})}
 };
