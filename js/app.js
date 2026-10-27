@@ -203,11 +203,26 @@ function openOT(d){preSt='OT';editing=null;modal=true;warn=false;dl=false;draw()
 // Tick a break after taking it. Each calendar day has its own ticks, so a new day always starts empty.
 // Stored on this device only (localStorage 'sc-breaks': {dayNumber: bitmask}); days older than 60 days are dropped.
 const BREAKS=6;
+// Break times: each shift type has up to 6 times; one day can override them (field bk on that day's shift).
+const okHM=v=>/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v||''));
+const cleanBk=a=>[...new Set((a||[]).filter(okHM))].sort().slice(0,BREAKS);
+const bkTimes=d=>{const s=S[d];if(!s)return[];if(Array.isArray(s.bk))return cleanBk(s.bk);const x=typeOf(d);return x?cleanBk(x.bk):[]};
+let bkArr=[],bkDay=null;
+const bkRows=()=>`${bkArr.map((v,i)=>`<div class="bkr"><span class="bkn">${i+1}</span><input type="time" value="${esc(v)}" onchange="bkArr[${i}]=this.value" aria-label="Break ${i+1} time"><button type="button" class="xbtn" aria-label="Remove break ${i+1}" onclick="bkRm(${i})">✕</button></div>`).join('')}${bkArr.length<BREAKS?`<button type="button" class="btn" style="background:#8a97b8;margin-top:6px" onclick="bkAdd()">+ Add break time (${bkArr.length}/${BREAKS})</button>`:`<div class="m">All ${BREAKS} slots used.</div>`}`;
+const bkRefresh=()=>{const e=document.getElementById('bk-list');if(e)e.innerHTML=bkRows()};
+function bkAdd(){if(bkArr.length>=BREAKS)return;const l=bkArr.filter(okHM).sort().pop(),n=l?Math.min(1425,hm(l)+120):600;bkArr.push(pad(Math.floor(n/60))+':'+pad(n%60));bkRefresh()}
+function bkRm(i){bkArr.splice(i,1);bkRefresh()}
+function openBkDay(d){bkDay=d;bkArr=bkTimes(d).slice();modal='bkd';draw()}
+function bkDayHTML(){const s=S[bkDay];return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>Break times · ${DOW[dow(bkDay)]} ${fd(bkDay)}</h2>
+  <div class="m">Only for this day. Use this when a break is moved. The shift type's own times are set in Rules &amp; Settings.</div><div class="f" id="bk-list">${bkRows()}</div>
+  <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" onclick="saveBkDay()">Save for this day</button>${s&&Array.isArray(s.bk)?'<button class="btn" style="background:#8a97b8" onclick="resetBkDay()">Use the shift type\'s times</button>':''}</div></div>`}
+function saveBkDay(){if(bkArr.some(v=>!okHM(v)))return wn('Fill in every time, or remove the empty slot.');const s=S[bkDay];if(!s)return closeM();s.bk=cleanBk(bkArr);pS(bkDay);armNotifs();showOk('Saved');closeM()}
+function resetBkDay(){const s=S[bkDay];if(s){delete s.bk;pS(bkDay);armNotifs()}showOk('Saved');closeM()}
 const BK={get(){try{return JSON.parse(localStorage.getItem('sc-breaks')||'{}')}catch(e){return{}}},set(o){try{localStorage.setItem('sc-breaks',JSON.stringify(o))}catch(e){}}};
 const bkMask=d=>+BK.get()[d]||0,bkOn=(m,i)=>(m>>i&1)==1,bkCount=m=>{let c=0;for(let i=0;i<BREAKS;i++)if(bkOn(m,i))c++;return c};
-function tgB(d,i){const o=BK.get();o[d]=(+o[d]||0)^(1<<i);if(!o[d])delete o[d];for(const k of Object.keys(o))if(+k<TODAY-60)delete o[k];BK.set(o);try{navigator.vibrate&&navigator.vibrate(6)}catch(e){}draw()}
-function breaksCard(d){const m=bkMask(d),n=bkCount(m);
-  return `<div class="card"><div class="row"><div class="t">Breaks</div><span class="pill ${n>=BREAKS?'st-Approved':'st-Planned'}">${n} / ${BREAKS} used</span></div><div class="bks">${[...Array(BREAKS)].map((_,i)=>`<button type="button" class="bk${bkOn(m,i)?' on':''}" role="checkbox" aria-checked="${bkOn(m,i)}" aria-label="Break ${i+1}" onclick="tgB(${d},${i})">${bkOn(m,i)?'✓':i+1}</button>`).join('')}</div><div class="m">${n>=BREAKS?'All breaks taken':(BREAKS-n)+' left'} · new day, new boxes</div></div>`}
+function tgB(d,i){const o=BK.get();setTimeout(armNotifs,0);o[d]=(+o[d]||0)^(1<<i);if(!o[d])delete o[d];for(const k of Object.keys(o))if(+k<TODAY-60)delete o[k];BK.set(o);try{navigator.vibrate&&navigator.vibrate(6)}catch(e){}draw()}
+function breaksCard(d){const m=bkMask(d),n=bkCount(m),tm_=bkTimes(d);
+  return `<div class="card"><div class="row"><div class="t">Breaks</div><span class="pill ${n>=BREAKS?'st-Approved':'st-Planned'}">${n} / ${BREAKS} used</span></div><div class="bks">${[...Array(BREAKS)].map((_,i)=>`<div class="bkc"><button type="button" class="bk${bkOn(m,i)?' on':''}" role="checkbox" aria-checked="${bkOn(m,i)}" aria-label="Break ${i+1}${tm_[i]?' at '+tm_[i]:''}" onclick="tgB(${d},${i})">${bkOn(m,i)?'✓':i+1}</button><span class="bkt">${tm_[i]||''}</span></div>`).join('')}</div><div class="m">${n>=BREAKS?'All breaks taken':(BREAKS-n)+' left'} · new day, new boxes${S[d]?` · <a href="#" onclick="openBkDay(${d});return false" style="color:var(--blue,#3987e5)">${tm_.length?'Edit times':'Set times'}</a>`:''}</div></div>`}
 function swaps(){
   const due=swapLog.filter(w=>fuOpen(w)&&w.fu<=TODAY+3).sort((a,b)=>a.fu-b.fu);
   const L=[...swapLog].sort((a,b)=>Math.max(b.give,b.take)-Math.max(a.give,a.take));
@@ -298,7 +313,7 @@ function histTab(){const rows=[...LOG].filter(r=>!hKind||(r.k||'shift')==hKind).
   if(!G.length)return head+'<div class="card"><div class="t">No changes recorded yet</div><div class="m">From now on, changes show up here.</div></div>';
   const cnts=its=>{const c={add:0,edit:0,remove:0};its.forEach(r=>c[r.a]++);return `${c.edit} changed · ${c.add} added · ${c.remove} removed`};
   return head+G.slice(0,hLim).map(g=>{
-    if(!g.batch)return `<div class="card hcard"><div class="m">${hStamp(g.t)}${g.src=='undo'?' · undo':''}</div>${hLine(g.items[0])}</div>`;
+    if(!g.batch)return `<div class="card hcard"><div class="m">${hStamp(g.t)}${g.src=='undo'?' · undo':g.src=='swap'?' · from swap':''}</div>${hLine(g.items[0])}</div>`;
     const imp=g.src=='import',sorted=g.items.slice().sort((a,b)=>a.d-b.d),isU=undone.has(String(g.batch))||undone.has(g.batch);
     return `<div class="card hcard"><details><summary><div class="m">${hStamp(g.t)} · ${imp?'Import':'Undo'}${g.label?' · '+esc(g.label):''}</div><div class="t">${cnts(g.items)}</div></summary>${sorted.map(hLine).join('')}${imp?(isU?'<div class="m" style="margin-top:6px">✓ This import was undone.</div>':`<button class="btn" id="hu${g.batch}" style="background:var(--red);margin-top:8px" onclick="histUndo('${g.batch}')">Undo this import</button>`):''}</details></div>`}).join('')+
     (G.length>hLim?'<button class="btn" style="background:#8a97b8" onclick="hLim+=40;keepDraw()">Show older changes</button>':'')}
@@ -311,22 +326,24 @@ function histUndo(id){const b=document.getElementById('hu'+id);if(hArm!=id){hArm
   finally{logCtx={src:'manual',batch:null,label:null,of:null}}
   showOk('Import undone');keepDraw()}
 let tyId=null,tyC=TYPE_COLORS[2],tyDel=false;
-function openTy(i){tyId=i;tyDel=false;tyC=i==null?(TYPE_COLORS.find(c=>!TYPES.some(x=>x.c==c))||TYPE_COLORS[0]):TYPES[i].c;modal='ty';draw()}
+function openTy(i){bkArr=i==null?[]:(TYPES[i].bk||[]).slice();tyId=i;tyDel=false;tyC=i==null?(TYPE_COLORS.find(c=>!TYPES.some(x=>x.c==c))||TYPE_COLORS[0]):TYPES[i].c;modal='ty';draw()}
 function pickC(c){tyC=c;document.querySelectorAll('.sw8 button').forEach(b=>b.classList.toggle('on',b.dataset.c==c))}
 function tyHTML(){const x=tyId==null?{n:'',l:'',s:'08:00',e:'16:00'}:TYPES[tyId];
   return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${tyId==null?'New shift type':'Edit shift type'}</h2>
   <div class="two"><div class="f"><label>Name</label><input id="t-n" maxlength="16" value="${esc(x.n)}" placeholder="Night shift"></div><div class="f"><label>Letter</label><input id="t-l" maxlength="2" value="${esc(x.l)}" placeholder="N" style="text-transform:uppercase"></div>
   <div class="f"><label>Start</label><input id="t-a" type="time" value="${x.s}"></div><div class="f"><label>End</label><input id="t-b" type="time" value="${x.e}"></div></div>
   <div class="f"><label>Colour</label><div class="sw8">${TYPE_COLORS.map(c=>`<button type="button" data-c="${c}" aria-label="${c}" class="${c==tyC?'on':''}" style="background:${c}" onclick="pickC('${c}')"></button>`).join('')}</div></div>
+  <div class="f"><label>Break times (up to ${BREAKS})</label><div id="bk-list">${bkRows()}</div><div class="m">You get a reminder at each time when reminders are on. If a break moves on one day, change it from that day's Breaks box.</div></div>
   <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" onclick="saveTy()">Save</button>${tyId!=null?'<button class="btn" id="tdl" style="background:var(--red)" onclick="delTy()">Delete shift type</button>':''}</div></div>`}
 function saveTy(){const n=fv('t-n').trim(),l=(fv('t-l').trim()||n.slice(0,1)).toUpperCase().slice(0,2),a=fv('t-a'),b=fv('t-b');
   if(!n)return wn('Give the shift a name.');if(!l)return wn('Pick a letter.');if(l=='C')return wn('C is reserved for customized shifts.');
   if(!a||!b||b<=a)return wn('Pick an end time after the start.');
   if(TYPES.some((x,i)=>i!=tyId&&x.l==l))return wn('Letter '+l+' is used by another shift type.');
   if(TYPES.some((x,i)=>i!=tyId&&x.s==a&&x.e==b))return wn('Another shift type already has these hours.');
-  const rec={id:tyId==null?'t'+Date.now().toString(36):TYPES[tyId].id,n,l,s:a,e:b,c:tyC};
+  if(bkArr.some(v=>!okHM(v)))return wn('Fill in every break time, or remove the empty slot.');
+  const rec={id:tyId==null?'t'+Date.now().toString(36):TYPES[tyId].id,n,l,s:a,e:b,c:tyC,bk:cleanBk(bkArr)};
   if(tyId==null){if(TYPES.length>=8)return wn('Up to 8 shift types.');TYPES.push(rec)}else TYPES[tyId]=rec;
-  pT();showOk('Saved');closeM()}
+  pT();armNotifs();showOk('Saved');closeM()}
 function delTy(){const b=document.getElementById('tdl');if(!tyDel){tyDel=true;b.textContent='Tap again to confirm. Shifts keep their times and show C.';return}TYPES.splice(tyId,1);pT();closeM()}
 
 // ---------- statistics ----------
@@ -522,15 +539,32 @@ function impHTML(){let b;
 const SWST=[['Planned','Planned'],['Review','Under Review'],['Approved','Approved'],['Denied','Denied']];
 const swapTitle=w=>w.give&&w.take?`Give ${fd(w.give)} ⇄ Take ${fd(w.take)}`:w.give?`Give away ${fd(w.give)}`:`Take ${fd(w.take)}`;
 const swapText=w=>swapTitle(w)+(w.who?' with '+w.who:'');
+// An Approved swap moves the shifts: the day I give becomes a day off, the day I take gets that shift.
+// The swap record remembers what it changed (ap, gs, pt) so un-approving or deleting puts everything back.
+const cpS=s=>s?{s:s.s,e:s.e,st:s.st,f:s.f||''}:null;
+function dropShift(d){if(!S[d])return;xS(d);delete S[d];const i=work.indexOf(d);if(i>=0)work.splice(i,1)}
+function putShift(d,s){S[d]={...(S[d]||{}),s:s.s,e:s.e,st:s.st,f:s.f||''};if(!work.includes(d)){work.push(d);work.sort((a,b)=>a-b)}pS(d)}
+function swapApply(w){if(w.st!='Approved'||w.ap)return w;const sc=logCtx;logCtx={src:'swap',batch:null,label:null,of:null};
+  try{const gs=w.give&&S[w.give]?cpS(S[w.give]):null;let pt=null;
+    if(gs)dropShift(w.give);
+    const nt=gs?{...gs,st:'Scheduled',f:'Swapped'}:(w.take&&okT(w.ts)&&okT(w.te)?{s:w.ts,e:w.te,st:'Scheduled',f:'Swapped'}:null);
+    if(w.take&&nt){pt=S[w.take]?cpS(S[w.take]):null;putShift(w.take,nt)}
+    return {...w,ap:1,gs,pt}}finally{logCtx=sc}}
+function swapRevert(w){if(!w.ap)return w;const sc=logCtx;logCtx={src:'swap',batch:null,label:null,of:null};
+  try{if(w.take&&S[w.take]&&S[w.take].f=='Swapped'){if(w.pt)putShift(w.take,w.pt);else dropShift(w.take)}
+    if(w.give&&w.gs&&!S[w.give])putShift(w.give,w.gs);
+    const {ap,gs,pt,...r}=w;return {...r,ap:0,gs:null,pt:null}}finally{logCtx=sc}}
 const fuOpen=w=>w.fu&&(w.st=='Planned'||w.st=='Review');
 function swapHTML(){const w=swId?swapLog.find(x=>x.id==swId):null,x=w||{give:swPre.give||0,take:swPre.take||0,who:'',st:'Planned',fu:0,note:''},dv=v=>v?iso(v):'';
   return `<div class="ov" onclick="if(event.target==this)closeM()"><div class="mod" id="md"><div class="grab" id="mg"></div><h2>${w?'Edit swap':'Log a swap'}</h2>
   <div class="two"><div class="f"><label>I give away</label><input id="w-g" type="date" value="${dv(x.give)}" onchange="wr()"></div><div class="f"><label>I take</label><input id="w-t" type="date" value="${dv(x.take)}" onchange="wr()"></div>
   <div class="f"><label>With</label><input id="w-w" value="${esc(x.who||'')}" placeholder="Colleague name"></div><div class="f"><label>Status</label><select id="w-s">${SWST.map(o=>`<option value="${o[0]}" ${o[0]==x.st?'selected':''}>${o[1]}</option>`).join('')}</select></div>
-  <div class="f"><label>Follow up on (optional)</label><input id="w-r" type="date" value="${dv(x.fu)}"></div><div class="f"><label>Note (optional)</label><input id="w-n" value="${esc(x.note||'')}"></div></div>
+  <div class="f"><label>Follow up on (optional)</label><input id="w-r" type="date" value="${dv(x.fu)}"></div><div class="f"><label>Note (optional)</label><input id="w-n" value="${esc(x.note||'')}"></div>
+  <div class="f"><label>Taken shift starts</label><input id="w-ts" type="time" value="${x.ts||''}"></div><div class="f"><label>Taken shift ends</label><input id="w-te" type="time" value="${x.te||''}"></div></div>
+  <div class="m">When the swap is <b>Approved</b>, the day you give becomes a day off and the day you take gets that shift. Start and end are only needed if you take a day without giving one.</div>
   <div id="wn" class="bad m" style="margin-top:8px;min-height:16px"></div><button class="btn" id="sv" onclick="saveW()">${w?'Save changes':'Save swap'}</button>${w?'<button class="btn" id="dl" style="background:var(--red)" onclick="delW()">Delete swap</button>':''}</div></div>`}
 function wr(){warn=false;const b=document.getElementById('sv');if(b)b.textContent=swId?'Save changes':'Save swap';wn('')}
-function saveW(){const gv=fv('w-g'),tv=fv('w-t'),rv=fv('w-r'),give=gv?fromIso(gv):0,take=tv?fromIso(tv):0,fu=rv?fromIso(rv):0,st=fv('w-s'),who=fv('w-w').trim(),note=fv('w-n').trim();
+function saveW(){const gv=fv('w-g'),tv=fv('w-t'),rv=fv('w-r'),give=gv?fromIso(gv):0,take=tv?fromIso(tv):0,fu=rv?fromIso(rv):0,st=fv('w-s'),who=fv('w-w').trim(),note=fv('w-n').trim(),ts=fv('w-ts'),te=fv('w-te');
   if(isNaN(give)||isNaN(take)||isNaN(fu))return wn('Check the dates.');
   if(!give&&!take)return wn('Pick the day you give away, the day you take, or both.');
   if(give&&give==take)return wn('The give and take days must be different.');
@@ -539,9 +573,12 @@ function saveW(){const gv=fv('w-g'),tv=fv('w-t'),rv=fv('w-r'),give=gv?fromIso(gv
     if(give&&!(S[give]&&S[give].st!='Denied'))msgs.push(`You have no shift on ${fd(give)} to give away.`);
     if(take){if(S[take]&&S[take].st!='Denied')msgs.push(`You already work on ${fd(take)}.`);else if(off(take))msgs.push(`You are on approved leave on ${fd(take)}.`);else msgs.push(...check(take,give))}}
   if(msgs.length&&!warn){warn=true;document.getElementById('sv').textContent='Save anyway';return wn('⚠ '+msgs.join(' · '))}
-  const rec={id:swId||newId(),give,take,who,st,fu,note};
-  if(old)swapLog[swapLog.indexOf(old)]=rec;else swapLog.push(rec);pW(rec);col=false;closeM()}
-function delW(){const b=document.getElementById('dl');if(!dl){dl=true;b.textContent='Tap again to confirm delete';return}xW(swId);swapLog=swapLog.filter(x=>x.id!=swId);closeM()}
+  if(st=='Approved'&&take&&!(give&&S[give])&&!S[take]&&!(okT(ts)&&okT(te)))return wn('To add the taken day, fill in the start and end of the shift you take.');
+  let rec={id:swId||newId(),give,take,who,st,fu,note,ts:ts||'',te:te||'',ap:0,gs:null,pt:null};
+  if(old&&old.ap)swapRevert(old);   // put the old days back first; the new approval is applied below
+  rec=swapApply(rec);
+  if(old)swapLog[swapLog.indexOf(old)]=rec;else swapLog.push(rec);pW(rec);col=false;showOk(rec.ap?'Swap approved: days updated':'Saved');closeM()}
+function delW(){const b=document.getElementById('dl');if(!dl){dl=true;b.textContent='Tap again to confirm delete';return}{const o=swapLog.find(x=>x.id==swId);if(o&&o.ap)swapRevert(o)}xW(swId);swapLog=swapLog.filter(x=>x.id!=swId);closeM()}
 // ---------- bank holidays ----------
 const HL={earned:['Approved','Earned'],pending:['Planned','Pending'],blocked:['Denied','No TOIL'],off:[null,'']};
 const holNote=s=>({earned:'Worked · +1 TOIL day earned',pending:'Scheduled · +1 TOIL day on the day',blocked:'Full-day leave requested · no TOIL day',off:'Not scheduled · no TOIL day'})[s];
@@ -570,7 +607,7 @@ function fxOf(){let f='';if(pTab!==null){if(modal&&!pModal)f='modal';else if(!mo
 function draw(){try{drawNow()}catch(e){crash(e)}}
 function drawNow(){const v=[sched,swaps,leave,rules][tab]();const fx=fxOf(),ap=document.getElementById('app');if(ap.dataset)ap.dataset.fx=fx;
   const sv=['.page','.sheet','#md'].map(q=>{const e=ap.querySelector(q);return e?e.scrollTop:0});
-  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='stats'?statsHTML():modal=='hist'?histHTML():modal=='chk'?chkHTML():modal=='kpi'?kpiHTML():modal=='kpe'?kpeHTML():modal?modalHTML():'');if(fx!=='tr'&&fx!=='tl'){const q=ap.querySelector('.page'),w=ap.querySelector('.sheet'),m=ap.querySelector('#md');if(q)q.scrollTop=sv[0];if(w&&fx!=='day')w.scrollTop=sv[1];if(m&&fx!=='modal')m.scrollTop=sv[2]}
+  ap.innerHTML=v+`<button class="fab ${modal===true?'x up':''}" aria-label="${modal===true?'Close':'Add shift'}" onclick="${modal===true?'closeM()':'openM(null)'}">+</button><div class="nav">${[0,1,null,2,3].map(i=>i===null?'<span style="width:25%"></span>':`<button class="${i==tab?'on':''}" onclick="tab=${i};draw()">${icons[i]}${names[i]}</button>`).join('')}</div>`+(modal=='imp'?impHTML():modal=='exp'?expHTML():modal=='lv'?leaveHTML():modal=='sw'?swapHTML():modal=='bh'?bhHTML():modal=='bhm'?bhmHTML():modal=='ty'?tyHTML():modal=='bkd'?bkDayHTML():modal=='stats'?statsHTML():modal=='hist'?histHTML():modal=='chk'?chkHTML():modal=='kpi'?kpiHTML():modal=='kpe'?kpeHTML():modal?modalHTML():'');if(fx!=='tr'&&fx!=='tl'){const q=ap.querySelector('.page'),w=ap.querySelector('.sheet'),m=ap.querySelector('#md');if(q)q.scrollTop=sv[0];if(w&&fx!=='day')w.scrollTop=sv[1];if(m&&fx!=='modal')m.scrollTop=sv[2]}
   wire();if(modal=='lv')lu();if(!dbOk&&!document.getElementById('wbar')){const w=document.createElement('div');w.id='wbar';w.className='wbar';w.textContent='Storage unavailable: changes will not be saved. Close other copies of the app and reload.';ap.appendChild(w)}}
 function tsv(){const it=[];
   work.forEach(d=>{const x=S[d];it.push([d,0,isOT(d)?'Overtime':'Shift','',x.s,x.e,hm(x.e)-hm(x.s),lab[x.st]||x.st,x.f||'']);if(exMin(d))it.push([d,0.5,'Extra time',x.xr=='time'?'Time (ET)':'Money','','',exMin(d),'Reimbursed as '+(x.xr=='time'?'time':'money'),''])});
@@ -667,6 +704,7 @@ function evList(now){const td=todayN(now),lead=NS.get().lead,ev=[];
   for(let d=td-1;d<=td+2;d++){const s=S[d];
     if(s&&s.st!='Denied'&&!off(d)){const lb=hm(s.s)-R.commute,at=atLocal(d,lb-lead),by=new Date(atLocal(d,lb));
       ev.push({key:`shift:${d}:${at}`,at,until:atLocal(d,lb),title:'Leave by '+pad(by.getHours())+':'+pad(by.getMinutes()),body:`Shift starts ${s.s} · ${R.commute} min trip`})}
+    if(s&&s.st!='Denied'&&!off(d)){const bm=bkMask(d);bkTimes(d).forEach((v,i)=>{if(bkOn(bm,i))return;const at=atLocal(d,hm(v));ev.push({key:`bk:${d}:${i}:${v}`,at,until:at+15*6e4,title:`Break ${i+1} · ${v}`,body:'Time for your break. Tick it in the app after.'})})}
     swapLog.filter(w=>w.fu==d&&fuOpen(w)).forEach(w=>{const at=atLocal(d,540);ev.push({key:`swap:${w.id}:${at}`,at,until:atLocal(d,1439),title:'Swap follow-up'+(w.who?' · '+w.who:''),body:swapText(w)})})}
   return ev.sort((a,b)=>a.at-b.at)}
 const shownGet=()=>{try{return JSON.parse(localStorage.getItem('sc-shown')||'{}')}catch(e){return{}}},shownSet=o=>{try{localStorage.setItem('sc-shown',JSON.stringify(o))}catch(e){}};
@@ -680,7 +718,7 @@ function armNotifs(now){now=now||Date.now();timers.forEach(clearTimeout);timers=
 function notifCard(){const n=NS.get(),p=perm();let t,m,b='';
   if(p=='unsupported'){t='Reminders not available';m='This browser cannot show notifications. On iPhone, add the app to your Home Screen first (iOS 16.4 or later).'}
   else if(p=='denied'){t='Notifications blocked';m='Allow notifications for this site in your browser or phone settings, then come back.'}
-  else if(!n.on||p!='granted'){t='Leave-by reminders are off';m='Get a notification shortly before it is time to leave for work.';b='<button class="btn" onclick="notifOn()">Turn on reminders</button>'}
+  else if(!n.on||p!='granted'){t='Reminders are off';m='Get a notification shortly before it is time to leave for work, and at each of your break times.';b='<button class="btn" onclick="notifOn()">Turn on reminders</button>'}
   else{t='● Reminders on';m=`Notifies ${n.lead} min before you need to leave (trip ${R.commute} min). It works while the app is open or running in the background. For alerts when the app is closed, use the calendar file below.`;
     b=`<div class="row" style="margin:10px 0 2px"><div class="t">Remind me before leaving</div><div class="step"><button onclick="setLead(-5)">−</button><b>${n.lead} min</b><button onclick="setLead(5)">+</button></div></div><button class="btn" onclick="notifTest()">Send test notification</button><button class="btn" style="background:#8a97b8" onclick="notifOff()">Turn off</button>`}
   return `<div class="card"><div class="t">${t}</div><div class="m">${m}</div>${b}</div>`}

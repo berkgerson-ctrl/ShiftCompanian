@@ -80,7 +80,7 @@ const appSrc = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8').replace('re
 async function device(name, preset) {
   const idb = preset || makeIdb(), ls = makeLs();
   globalThis.indexedDB = idb; globalThis.localStorage = ls;
-  const app = new Function(appSrc + `;return {kind,fullLv,getTypes:()=>TYPES,setTypes:v=>{TYPES=v},pT,monthStats,limitStats,takenYear,toilMonth,S,work,leaves:()=>leaves,setLeaves:v=>{leaves=v},R,base,pS,xS,pL,pM,pB,O,ready,holidays:()=>holidays,setHolidays:v=>{holidays=v},swapLog:()=>swapLog,setSwaps:v=>{swapLog=v},pH,xH,pW,xW,holState,toilEarned,rem,setToday:v=>{TODAY=v},evList,armNotifs,tgB,bkMask,bkCount,BREAKS,BK,getKP:()=>KP,setKP:v=>{KP=v},pK,kSet,kDelVal,kSt,kKeys,kKey,kLatest,kf,kTgt,wkS,isOT,exMin,etEarned,parseX,check,tsv,used,icsText,NS,getTimers:()=>timers,csv,tplCsv,tplWorkbook,build,getImp:()=>imp,getLog:()=>LOG,doImport,histUndo,setImpRm:v=>{impRm=v},getImpRm:()=>impRm,logCtx:v=>{logCtx=v},setSrc:v=>{impSrc=v},cnt,histTab,hArm:()=>hArm,xL,xW,setHKind:v=>{hKind=v}}`)();
+  const app = new Function(appSrc + `;return {kind,fullLv,getTypes:()=>TYPES,setTypes:v=>{TYPES=v},pT,monthStats,limitStats,takenYear,toilMonth,S,work,leaves:()=>leaves,setLeaves:v=>{leaves=v},R,base,pS,xS,pL,pM,pB,O,ready,holidays:()=>holidays,setHolidays:v=>{holidays=v},swapLog:()=>swapLog,setSwaps:v=>{swapLog=v},pH,xH,pW,xW,holState,toilEarned,rem,setToday:v=>{TODAY=v},evList,armNotifs,tgB,bkMask,bkCount,BREAKS,BK,getKP:()=>KP,setKP:v=>{KP=v},pK,kSet,kDelVal,kSt,kKeys,kKey,kLatest,kf,kTgt,wkS,isOT,exMin,etEarned,parseX,check,tsv,used,icsText,NS,getTimers:()=>timers,csv,tplCsv,tplWorkbook,build,getImp:()=>imp,getLog:()=>LOG,doImport,histUndo,setImpRm:v=>{impRm=v},getImpRm:()=>impRm,logCtx:v=>{logCtx=v},setSrc:v=>{impSrc=v},cnt,histTab,hArm:()=>hArm,xL,xW,swapApply,swapRevert,bkTimes,cleanBk,tgB,setHKind:v=>{hKind=v}}`)();
   await app.ready;
   win.redraw = () => {};
   const dev = { name, idb, ls, app, api: win.syncApi };
@@ -466,6 +466,43 @@ q1.setHKind('swap'); hh = q1.histTab(); assert.ok(hh.includes('Swap') && !hh.inc
 ok('history shows leave and swap entries and can filter by kind');
 await L1.run(); await L2.run(); assert.equal(L2.app.getLog().filter(r => r.k === 'leave' || r.k === 'swap').length, 6);
 ok('leave and swap history syncs to another device');
+
+// 16. break times on shift types (and per day) drive reminders; an approved swap moves the shifts
+const BT = await device('BT'), bt = BT.app; BT.use(); bt.setToday(bt.O + 20);
+const BO = bt.O, atb = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
+bt.setTypes([{ id: 'E', n: 'Early', l: 'E', s: '07:00', e: '14:48', c: '#3987e5', bk: ['12:00', '09:30', '09:30', 'bad', '11:00', '10:00', '13:00'] }]);
+BT.addShift(22); BT.addShift(23); bt.S[BO + 23].s = '14:00'; bt.S[BO + 23].e = '21:48';
+assert.deepEqual(bt.bkTimes(BO + 22), ['09:30', '10:00', '11:00', '12:00', '13:00']); assert.deepEqual(bt.bkTimes(BO + 23), []);
+ok('a shift type keeps its break times (sorted, no duplicates or invalid, max 6); shifts of another type have none');
+bt.NS.set({ on: true });
+let be = bt.evList(atb(22, 5, 0)).filter(e => e.key.startsWith('bk:' + (BO + 22)));
+assert.equal(be.length, 5); assert.equal(be[0].at, atb(22, 9, 30)); assert.equal(be[0].title, 'Break 1 \u00b7 09:30'); assert.equal(be[0].until, atb(22, 9, 45));
+bt.tgB(BO + 22, 0); be = bt.evList(atb(22, 5, 0)).filter(e => e.key.startsWith('bk:' + (BO + 22))); assert.equal(be.length, 4); assert.equal(be[0].title, 'Break 2 \u00b7 10:00');
+ok('each break time gets a reminder; a break already ticked gets none');
+bt.pT(); bt.S[BO + 22].bk = ['08:15']; assert.deepEqual(bt.bkTimes(BO + 22), ['08:15']); bt.pS(BO + 22);
+await BT.run(); const BT2 = await device('BT2'); await BT2.run(); assert.deepEqual(BT2.app.bkTimes(BO + 22), ['08:15']);
+assert.deepEqual(BT2.app.cleanBk(BT2.app.getTypes()[0].bk), ['09:30', '10:00', '11:00', '12:00', '13:00']);
+ok('a break moved for one day overrides the type and syncs, as do the type\'s break times');
+BT.use();
+// swap: give day 22 (07:00-14:48), take day 24
+let sw1 = { id: 801, give: BO + 22, take: BO + 24, who: 'Ana', st: 'Planned', fu: 0, note: '', ts: '', te: '' };
+assert.equal(bt.swapApply(sw1).ap, undefined);
+sw1 = bt.swapApply({ ...sw1, st: 'Approved' });
+assert.equal(sw1.ap, 1); assert.ok(!bt.S[BO + 22]); assert.ok(!bt.work.includes(BO + 22)); assert.equal(bt.S[BO + 24].s, '07:00'); assert.equal(bt.S[BO + 24].e, '14:48'); assert.ok(bt.work.includes(BO + 24));
+assert.equal(bt.kind(BO + 22), ''); assert.equal(bt.kind(BO + 24), 'E');
+ok('approving a swap makes the given day a day off and puts that shift on the taken day');
+const lg = bt.getLog().filter(r => r.src === 'swap'); assert.deepEqual(lg.map(r => r.a).sort(), ['add', 'remove']);
+ok('both shift changes appear in the change history');
+const sw1r = bt.swapRevert({ ...sw1, st: 'Denied' });
+assert.equal(sw1r.ap, 0); assert.equal(bt.S[BO + 22].s, '07:00'); assert.ok(!bt.S[BO + 24]); assert.ok(bt.work.includes(BO + 22) && !bt.work.includes(BO + 24));
+ok('moving an approved swap back to another status (or deleting it) restores both days');
+// take-only swap with its own times, onto a day that already has a shift (kept for undo)
+bt.S[BO + 26] = { s: '10:00', e: '17:48', st: 'Scheduled', f: '' }; bt.work.push(BO + 26); bt.pS(BO + 26);
+let sw2 = bt.swapApply({ id: 802, give: 0, take: BO + 26, who: 'Bo', st: 'Approved', fu: 0, note: '', ts: '06:00', te: '13:48' });
+assert.equal(bt.S[BO + 26].s, '06:00'); assert.equal(sw2.pt.s, '10:00'); sw2 = bt.swapRevert(sw2); assert.equal(bt.S[BO + 26].s, '10:00');
+ok('taking a day with your own start/end works, and reverting restores what was there');
+let sw3 = bt.swapApply({ id: 803, give: BO + 40, take: BO + 41, who: '', st: 'Approved', fu: 0, note: '', ts: '', te: '' });
+assert.equal(sw3.ap, 1); assert.ok(!bt.S[BO + 41]); ok('a swap with nothing to move is harmless');
 
 console.log('\nAll ' + n + ' sync checks passed.');
 fs.rmSync(tmp, { recursive: true, force: true });

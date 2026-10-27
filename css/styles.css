@@ -200,3 +200,8 @@ html,body{overscroll-behavior-y:contain}
 .chk{display:flex;gap:8px;align-items:flex-start;margin:12px 0 8px;font-size:13px;color:var(--ink)}.chk input{width:20px;height:20px;margin-top:1px;flex:none}
 
 .hk{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#dfe6f5;color:#44527a;border-radius:6px;padding:1px 6px;margin-left:4px;vertical-align:middle}
+
+/* break times */
+.bks .bkc{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;min-width:0}.bkt{font-size:11px;color:var(--mute,#6b7a9e);min-height:13px}
+.bkr{display:flex;gap:8px;align-items:center;margin-top:6px}.bkr input{flex:1}.bkn{width:22px;text-align:center;font-weight:700;color:var(--mute,#6b7a9e)}
+.bkc .bk{width:100%;flex:none}

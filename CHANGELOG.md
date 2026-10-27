@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8.0
+
+- **Approved swaps move your shifts.** When a swap is set to *Approved*, the day you give becomes a day off and the day you take gets that shift. If you only take a day, fill in the start and end of the shift you take. Setting the swap back to another status, changing its days, or deleting it puts both days back as they were. Each change appears in Change history (marked "from swap"). Swaps approved before this update are not changed retroactively.
+- **Break times.** In Rules & Settings, each shift type has up to 6 break times (add and remove slots). The Breaks box on a day shows each time under its checkbox, and a reminder notification fires at each break time while reminders are on (a break you already ticked gets none). If a break moves on one day, tap *Edit times* in that day's Breaks box. That change applies to that day only and syncs.
+
 ## 1.7.1
 
 - **Change history now also records leave requests and swaps** (add, edit, delete, with the old values), next to shifts. A filter shows Everything, Shifts, Leave requests or Swaps.
